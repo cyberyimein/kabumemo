@@ -1,0 +1,204 @@
+{
+  "app": {
+    "header": {
+  "title": "一个股票交易记录器",
+      "tagline": "本地管理交易、持仓、资金与纳税流程"
+    },
+    "language": {
+      "label": "界面语言"
+    },
+    "status": {
+      "online": "后端在线",
+      "offline": "后端异常",
+      "unknown": "未知"
+    },
+    "notifications": {
+      "error": "错误",
+      "success": "成功",
+      "info": "提示"
+    },
+    "loading": "正在加载最新数据...",
+    "navLabel": "主功能导航",
+    "toasts": {
+      "dataRefreshed": "数据已刷新",
+      "healthUnavailable": "无法获取后端健康状态，请确认 FastAPI 是否启动"
+    }
+  },
+  "tabs": {
+    "transactions": "交易表",
+    "positions": "持仓表",
+    "funds": "资金表",
+    "tax": "纳税"
+  },
+  "common": {
+    "actions": {
+      "refresh": "刷新",
+      "delete": "删除",
+      "create": "创建"
+    },
+    "states": {
+      "none": "暂无数据"
+    },
+    "toggle": {
+      "buy": "买入",
+      "sell": "卖出",
+      "market": {
+        "jp": "日股",
+        "us": "美股"
+      }
+    },
+    "currencies": {
+      "JPY": "JPY",
+      "USD": "USD"
+    },
+    "labels": {
+      "memo": "备注"
+    },
+    "select": "选择",
+    "selected": "已选择"
+  },
+  "transactions": {
+    "title": "交易表",
+    "description": "记录所有买卖操作，可按需补充备注与纳税状态。",
+    "formTitle": "新增交易",
+    "tradeTypeLabel": "交易类型",
+    "marketLabel": "市场",
+    "fields": {
+      "tradeDate": "交易日期",
+      "symbol": "股票代码",
+      "quantity": "数量",
+      "grossAmount": "总金额",
+      "fundingGroup": "资金组",
+      "cashCurrency": "资金货币",
+      "taxed": "纳税标记",
+      "memo": "备注"
+    },
+    "placeholders": {
+      "symbol": "7203.T",
+      "memo": "可选",
+      "fundingGroup": "请选择资金组"
+    },
+    "taxOptions": {
+      "Y": "已纳税 (Y)",
+      "N": "未纳税 (N)"
+    },
+    "submit": "录入交易",
+    "historyTitle": "历史交易 ({count})",
+    "table": {
+      "date": "日期",
+      "symbol": "股票",
+      "quantity": "数量",
+      "amount": "金额",
+      "fundingGroup": "资金组",
+      "currency": "货币",
+      "market": "市场",
+      "taxed": "纳税",
+      "actions": "操作"
+    },
+    "empty": "暂无数据",
+    "toasts": {
+      "created": "交易已记录",
+      "refreshed": "交易数据已更新",
+      "deleted": "交易已删除"
+    },
+    "confirm": {
+      "delete": "确认删除 {date} 的 {symbol} 交易吗？"
+    }
+  },
+  "positions": {
+    "title": "持仓表",
+    "description": "根据交易自动计算剩余仓位、平均成本与落地盈亏。",
+    "listTitle": "持仓列表 ({count})",
+    "table": {
+      "symbol": "股票",
+      "market": "市场",
+      "quantity": "数量",
+      "cost": "平均成本",
+      "pl": "落地盈亏"
+    },
+    "empty": "暂无持仓数据",
+    "toasts": {
+      "refreshed": "持仓数据已更新"
+    }
+  },
+  "funds": {
+    "title": "资金与资金组",
+    "description": "管理资金组配置并查看当前资金状况。",
+    "formTitle": "新增资金组",
+    "fields": {
+      "name": "名称",
+      "currency": "货币",
+      "initial": "初始资金",
+      "notes": "备注"
+    },
+    "placeholders": {
+      "name": "Default JPY",
+      "notes": "可选"
+    },
+    "submit": "创建资金组",
+    "listTitle": "资金组列表 ({count})",
+    "table": {
+      "name": "名称",
+      "currency": "货币",
+      "initial": "初始资金",
+      "notes": "备注",
+      "actions": "操作"
+    },
+    "emptyGroups": "暂无资金组",
+    "snapshotTitle": "资金快照",
+    "snapshotTable": {
+      "name": "资金组",
+      "currency": "货币",
+      "initial": "初始资金",
+      "current": "当前总额",
+      "pl": "总盈亏"
+    },
+    "emptySnapshot": "暂无资金快照",
+    "confirm": {
+      "mustKeepOne": "至少保留一个资金组。",
+      "delete": "确定删除资金组 {name} 吗？"
+    },
+    "toasts": {
+      "created": "资金组已创建",
+      "deleted": "资金组已删除",
+      "refreshed": "资金数据已更新"
+    }
+  },
+  "tax": {
+    "title": "纳税处理",
+    "description": "列出未纳税的卖出交易，记录纳税金额后会自动更新资金组与税务状态。",
+    "pendingTitle": "待处理交易 ({count})",
+    "table": {
+      "date": "日期",
+      "symbol": "股票",
+      "quantity": "数量",
+      "fundingGroup": "资金组",
+      "amount": "金额",
+      "actions": "操作"
+    },
+    "empty": "目前没有未纳税的卖出记录。",
+    "select": "选择",
+    "selected": "已选择",
+    "formTitle": "记录纳税",
+    "hint": "请先从左侧选择一笔卖出交易。",
+    "inline": {
+      "symbol": "股票：{value}",
+      "fundingGroup": "资金组：{value}",
+      "amount": "卖出金额：{value}"
+    },
+    "fields": {
+      "amount": "纳税金额",
+      "amountJPY": "纳税金额 (JPY)",
+      "currency": "纳税货币",
+      "rate": "汇率 (JPY/USD)",
+      "converted": "折合美元 (可选)"
+    },
+    "convertedHint": "默认使用自动换算，可手动覆盖",
+    "autoConversion": "自动换算：{auto}",
+    "submitAmount": "提交金额：{value}",
+    "submit": "记录纳税",
+    "toasts": {
+      "updated": "纳税记录已更新"
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "app": {
+    "header": {
+  "title": "株式取引記録ツール",
+      "tagline": "取引・保有・資金・税務をローカルで管理します。"
+    },
+    "language": {
+      "label": "表示言語"
+    },
+    "status": {
+      "online": "バックエンド稼働中",
+      "offline": "バックエンド異常",
+      "unknown": "不明"
+    },
+    "notifications": {
+      "error": "エラー",
+      "success": "成功",
+      "info": "情報"
+    },
+    "loading": "最新データを読み込み中...",
+    "navLabel": "メインナビゲーション",
+    "toasts": {
+      "dataRefreshed": "データを更新しました",
+      "healthUnavailable": "バックエンドのヘルスチェックに接続できません。FastAPI が起動しているか確認してください。"
+    }
+  },
+  "tabs": {
+    "transactions": "取引",
+    "positions": "ポジション",
+    "funds": "資金",
+    "tax": "納税"
+  },
+  "common": {
+    "actions": {
+      "refresh": "更新",
+      "delete": "削除",
+      "create": "作成"
+    },
+    "states": {
+      "none": "データがありません"
+    },
+    "toggle": {
+      "buy": "買い",
+      "sell": "売り",
+      "market": {
+        "jp": "日本株",
+        "us": "米国株"
+      }
+    },
+    "currencies": {
+      "JPY": "JPY",
+      "USD": "USD"
+    },
+    "labels": {
+      "memo": "メモ"
+    },
+    "select": "選択",
+    "selected": "選択済み"
+  },
+  "transactions": {
+    "title": "取引",
+    "description": "売買取引を記録し、必要に応じてメモと納税状況を追加します。",
+    "formTitle": "取引を追加",
+    "tradeTypeLabel": "取引種別",
+    "marketLabel": "市場",
+    "fields": {
+      "tradeDate": "取引日",
+      "symbol": "銘柄コード",
+      "quantity": "数量",
+      "grossAmount": "総額",
+      "fundingGroup": "資金グループ",
+      "cashCurrency": "資金通貨",
+      "taxed": "納税区分",
+      "memo": "メモ"
+    },
+    "placeholders": {
+      "symbol": "7203.T",
+      "memo": "任意",
+      "fundingGroup": "資金グループを選択"
+    },
+    "taxOptions": {
+      "Y": "納税済み (Y)",
+      "N": "未納税 (N)"
+    },
+    "submit": "取引を登録",
+    "historyTitle": "取引履歴 ({count})",
+    "table": {
+      "date": "日付",
+      "symbol": "銘柄",
+      "quantity": "数量",
+      "amount": "金額",
+      "fundingGroup": "資金グループ",
+      "currency": "通貨",
+      "market": "市場",
+      "taxed": "納税",
+      "actions": "操作"
+    },
+    "empty": "取引がありません",
+    "toasts": {
+      "created": "取引を登録しました",
+      "refreshed": "取引データを更新しました",
+      "deleted": "取引を削除しました"
+    },
+    "confirm": {
+      "delete": "取引 {symbol}（{date}）を削除しますか？"
+    }
+  },
+  "positions": {
+    "title": "ポジション",
+    "description": "取引から残高、平均取得単価、実現損益を計算します。",
+    "listTitle": "ポジション一覧 ({count})",
+    "table": {
+      "symbol": "銘柄",
+      "market": "市場",
+      "quantity": "数量",
+      "cost": "平均取得単価",
+      "pl": "実現損益"
+    },
+    "empty": "ポジションがありません",
+    "toasts": {
+      "refreshed": "ポジションデータを更新しました"
+    }
+  },
+  "funds": {
+    "title": "資金と資金グループ",
+    "description": "資金グループを管理し、残高を確認します。",
+    "formTitle": "資金グループを追加",
+    "fields": {
+      "name": "名称",
+      "currency": "通貨",
+      "initial": "初期資金",
+      "notes": "メモ"
+    },
+    "placeholders": {
+      "name": "Default JPY",
+      "notes": "任意"
+    },
+    "submit": "資金グループを作成",
+    "listTitle": "資金グループ ({count})",
+    "table": {
+      "name": "名称",
+      "currency": "通貨",
+      "initial": "初期資金",
+      "notes": "メモ",
+      "actions": "操作"
+    },
+    "emptyGroups": "資金グループがありません",
+    "snapshotTitle": "資金スナップショット",
+    "snapshotTable": {
+      "name": "資金グループ",
+      "currency": "通貨",
+      "initial": "初期資金",
+      "current": "現在総額",
+      "pl": "累計損益"
+    },
+    "emptySnapshot": "資金スナップショットがありません",
+    "confirm": {
+      "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
+      "delete": "資金グループ {name} を削除しますか？"
+    },
+    "toasts": {
+      "created": "資金グループを作成しました",
+      "deleted": "資金グループを削除しました",
+      "refreshed": "資金データを更新しました"
+    }
+  },
+  "tax": {
+    "title": "納税処理",
+    "description": "未納税の売却取引を一覧表示し、納税額を登録すると資金グループと税区分を更新します。",
+    "pendingTitle": "未処理の取引 ({count})",
+    "table": {
+      "date": "日付",
+      "symbol": "銘柄",
+      "quantity": "数量",
+      "fundingGroup": "資金グループ",
+      "amount": "金額",
+      "actions": "操作"
+    },
+    "empty": "未納税の売却取引はありません。",
+    "select": "選択",
+    "selected": "選択済み",
+    "formTitle": "納税を記録",
+    "hint": "左側から売却取引を選択してください。",
+    "inline": {
+      "symbol": "銘柄：{value}",
+      "fundingGroup": "資金グループ：{value}",
+      "amount": "売却金額：{value}"
+    },
+    "fields": {
+      "amount": "納税額",
+      "amountJPY": "納税額 (JPY)",
+      "currency": "納税通貨",
+      "rate": "為替レート (JPY/USD)",
+      "converted": "換算USD (任意)"
+    },
+    "convertedHint": "自動換算されますが、必要に応じて上書きできます。",
+    "autoConversion": "自動換算：{auto}",
+    "submitAmount": "送信額：{value}",
+    "submit": "納税を記録",
+    "toasts": {
+      "updated": "納税情報を更新しました"
+    }
+  }
+}

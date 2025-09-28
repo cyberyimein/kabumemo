@@ -1,0 +1,81 @@
+# General OS noise
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+.envrc
+*.env.local
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.manifest
+*.spec
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.python-version
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.dmypy.json
+.pyre/
+.ruff_cache/
+
+# Backend specific
+backend/.venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.coverage
+backend/.coverage.*
+backend/dist/
+backend/build/
+backend/*.egg-info/
+
+# Node / Vite artifacts
+**/node_modules/
+**/.npm/
+**/.yarn/
+**/.pnpm-store/
+**/dist/
+**/.vite/
+**/.nuxt/
+**/.next/
+**/.cache/
+**/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend environment files
+frontend/.env
+frontend/.env.*
+frontend/.env.local
+
+# Editor folders
+.idea/
+*.swp
+*.swo
+
+# Local data outputs
+data/**
+!data/.gitkeep
+*.log
+*.tmp
+
+# Coverage reports
+coverage/

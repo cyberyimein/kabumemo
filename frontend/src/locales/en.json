@@ -1,0 +1,204 @@
+{
+  "app": {
+    "header": {
+  "title": "A Stock Trading Recorder",
+      "tagline": "Manage trades, positions, funds, and taxes locally."
+    },
+    "language": {
+      "label": "Interface Language"
+    },
+    "status": {
+      "online": "Backend Online",
+      "offline": "Backend Issue",
+      "unknown": "Unknown"
+    },
+    "notifications": {
+      "error": "Error",
+      "success": "Success",
+      "info": "Info"
+    },
+    "loading": "Loading latest data...",
+    "navLabel": "Primary navigation",
+    "toasts": {
+      "dataRefreshed": "Data refreshed",
+      "healthUnavailable": "Unable to reach backend health. Please ensure FastAPI is running."
+    }
+  },
+  "tabs": {
+    "transactions": "Trades",
+    "positions": "Positions",
+    "funds": "Funds",
+    "tax": "Tax"
+  },
+  "common": {
+    "actions": {
+      "refresh": "Refresh",
+      "delete": "Delete",
+      "create": "Create"
+    },
+    "states": {
+      "none": "No data yet"
+    },
+    "toggle": {
+      "buy": "Buy",
+      "sell": "Sell",
+      "market": {
+        "jp": "Japan",
+        "us": "US"
+      }
+    },
+    "currencies": {
+      "JPY": "JPY",
+      "USD": "USD"
+    },
+    "labels": {
+      "memo": "Memo"
+    },
+    "select": "Select",
+    "selected": "Selected"
+  },
+  "transactions": {
+    "title": "Trades",
+    "description": "Record buy and sell transactions with optional notes and tax status.",
+    "formTitle": "New Transaction",
+    "tradeTypeLabel": "Trade Type",
+    "marketLabel": "Market",
+    "fields": {
+      "tradeDate": "Trade Date",
+      "symbol": "Ticker",
+      "quantity": "Quantity",
+      "grossAmount": "Gross Amount",
+      "fundingGroup": "Funding Group",
+      "cashCurrency": "Cash Currency",
+      "taxed": "Taxed",
+      "memo": "Memo"
+    },
+    "placeholders": {
+      "symbol": "7203.T",
+      "memo": "Optional",
+      "fundingGroup": "Select a funding group"
+    },
+    "taxOptions": {
+      "Y": "Taxed (Y)",
+      "N": "Untaxed (N)"
+    },
+    "submit": "Submit Transaction",
+    "historyTitle": "Transaction History ({count})",
+    "table": {
+      "date": "Date",
+      "symbol": "Ticker",
+      "quantity": "Quantity",
+      "amount": "Amount",
+      "fundingGroup": "Funding Group",
+      "currency": "Currency",
+      "market": "Market",
+      "taxed": "Taxed",
+      "actions": "Actions"
+    },
+    "empty": "No transactions yet",
+    "toasts": {
+      "created": "Trade recorded",
+      "refreshed": "Transactions updated",
+      "deleted": "Trade deleted"
+    },
+    "confirm": {
+      "delete": "Delete the trade {symbol} on {date}?"
+    }
+  },
+  "positions": {
+    "title": "Positions",
+    "description": "Calculate remaining holdings, average cost, and realized P&L from trades.",
+    "listTitle": "Position List ({count})",
+    "table": {
+      "symbol": "Ticker",
+      "market": "Market",
+      "quantity": "Quantity",
+      "cost": "Average Cost",
+      "pl": "Realized P&L"
+    },
+    "empty": "No positions yet",
+    "toasts": {
+      "refreshed": "Positions updated"
+    }
+  },
+  "funds": {
+    "title": "Funds & Groups",
+    "description": "Manage funding groups and review balances.",
+    "formTitle": "Add Funding Group",
+    "fields": {
+      "name": "Name",
+      "currency": "Currency",
+      "initial": "Initial Amount",
+      "notes": "Notes"
+    },
+    "placeholders": {
+      "name": "Default JPY",
+      "notes": "Optional"
+    },
+    "submit": "Create Group",
+    "listTitle": "Funding Groups ({count})",
+    "table": {
+      "name": "Name",
+      "currency": "Currency",
+      "initial": "Initial Amount",
+      "notes": "Notes",
+      "actions": "Actions"
+    },
+    "emptyGroups": "No funding groups",
+    "snapshotTitle": "Fund Snapshot",
+    "snapshotTable": {
+      "name": "Group",
+      "currency": "Currency",
+      "initial": "Initial Amount",
+      "current": "Current Total",
+      "pl": "Total P&L"
+    },
+    "emptySnapshot": "No fund snapshots",
+    "confirm": {
+      "mustKeepOne": "Keep at least one funding group.",
+      "delete": "Delete funding group {name}?"
+    },
+    "toasts": {
+      "created": "Funding group created",
+      "deleted": "Funding group deleted",
+      "refreshed": "Funds updated"
+    }
+  },
+  "tax": {
+    "title": "Tax Settlement",
+    "description": "List untaxed sell trades; recording tax updates funding groups and tax status.",
+    "pendingTitle": "Pending Trades ({count})",
+    "table": {
+      "date": "Date",
+      "symbol": "Ticker",
+      "quantity": "Quantity",
+      "fundingGroup": "Funding Group",
+      "amount": "Amount",
+      "actions": "Actions"
+    },
+    "empty": "No untaxed sell trades.",
+    "select": "Select",
+    "selected": "Selected",
+    "formTitle": "Record Tax",
+    "hint": "Choose a sell trade from the left first.",
+    "inline": {
+      "symbol": "Stock: {value}",
+      "fundingGroup": "Group: {value}",
+      "amount": "Sell Amount: {value}"
+    },
+    "fields": {
+      "amount": "Tax Amount",
+      "amountJPY": "Tax Amount (JPY)",
+      "currency": "Tax Currency",
+      "rate": "Exchange Rate (JPY/USD)",
+      "converted": "Converted USD (Optional)"
+    },
+    "convertedHint": "Automatic conversion provided; override if needed.",
+    "autoConversion": "Auto: {auto}",
+    "submitAmount": "Submitting: {value}",
+    "submit": "Record Tax",
+    "toasts": {
+      "updated": "Tax record updated"
+    }
+  }
+}

@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Response, status
+
+from ..models.schemas import (
+    FundSnapshot,
+    FundingGroup,
+    FundingGroupUpdate,
+    HealthResponse,
+    Position,
+    TaxSettlementRequest,
+    TaxSettlementResponse,
+    Transaction,
+    TransactionCreate,
+)
+from ..services.analytics import (
+    compute_fund_snapshots,
+    compute_positions,
+    record_tax_settlement,
+)
+from ..storage.repository import LocalDataRepository
+
+router = APIRouter(prefix="/api", tags=["kabucount"])
+repository = LocalDataRepository()
+repository.ensure_default_groups()
+
+
+@router.get("/health", response_model=HealthResponse)
+def health_check() -> HealthResponse:
+    return HealthResponse(status="ok")
+
+
+@router.get("/transactions", response_model=list[Transaction])
+def list_transactions() -> list[Transaction]:
+    return repository.list_transactions()
+
+
+@router.post(
+    "/transactions",
+    response_model=Transaction,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_transaction(payload: TransactionCreate) -> Transaction:
+    transactions = repository.list_transactions()
+    groups = repository.list_funding_groups()
+    if payload.funding_group not in {group.name for group in groups}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Funding group not found",
+        )
+    if payload.quantity < 0:
+        available_quantity = sum(
+            tx.quantity
+            for tx in transactions
+            if tx.symbol == payload.symbol and tx.market == payload.market
+        )
+        if available_quantity + payload.quantity < -1e-9:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient position to complete sell order",
+            )
+    return repository.add_transaction(payload)
+
+
+@router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transaction(transaction_id: str) -> Response:
+    try:
+        repository.delete_transaction(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/positions", response_model=list[Position])
+def get_positions() -> list[Position]:
+    transactions = repository.list_transactions()
+    return compute_positions(transactions)
+
+
+@router.get("/funds", response_model=list[FundSnapshot])
+def get_funds() -> list[FundSnapshot]:
+    transactions = repository.list_transactions()
+    groups = repository.list_funding_groups()
+    settlements = repository.list_tax_settlements()
+    return compute_fund_snapshots(transactions, groups, settlements)
+
+
+@router.get("/funding-groups", response_model=list[FundingGroup])
+def list_funding_groups() -> list[FundingGroup]:
+    return repository.list_funding_groups()
+
+
+@router.post(
+    "/funding-groups",
+    response_model=FundingGroup,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_funding_group(payload: FundingGroup) -> FundingGroup:
+    return repository.upsert_funding_group(payload)
+
+
+@router.patch(
+    "/funding-groups/{name}",
+    response_model=FundingGroup,
+)
+def update_funding_group(name: str, payload: FundingGroupUpdate) -> FundingGroup:
+    try:
+        return repository.patch_funding_group(name, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/funding-groups/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_funding_group(name: str) -> Response:
+    try:
+        repository.delete_funding_group(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/tax/settlements",
+    response_model=TaxSettlementResponse,
+)
+def settle_tax(payload: TaxSettlementRequest) -> TaxSettlementResponse:
+    try:
+        return record_tax_settlement(repository, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
