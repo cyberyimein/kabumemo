@@ -90,19 +90,20 @@ Default development endpoints:
 
 ## Backend API Overview
 
-| Method | Path                                 | Description                                                           |
-| ------ | ------------------------------------ | --------------------------------------------------------------------- |
-| GET    | `/api/health`                        | Health check                                                          |
-| GET    | `/api/transactions`                  | List all transactions                                                 |
-| POST   | `/api/transactions`                  | Create a transaction, auto-generating a UUID and validating positions |
-| DELETE | `/api/transactions/{transaction_id}` | Delete a transaction and clean up any related tax records             |
-| GET    | `/api/positions`                     | Compute positions and realized P/L from transactions                  |
-| GET    | `/api/funds`                         | Return fund group snapshots (initial capital, current total, P/L)     |
-| GET    | `/api/funding-groups`                | List funding groups; creates Default JPY/USD on first launch          |
-| POST   | `/api/funding-groups`                | Create or overwrite a funding group                                   |
-| PATCH  | `/api/funding-groups/{name}`         | Update a group’s currency, initial capital, or notes                  |
-| DELETE | `/api/funding-groups/{name}`         | Delete a group (at least one must remain)                             |
-| POST   | `/api/tax/settlements`               | Record tax settlements, updating both funds and tax status            |
+| Method | Path                                 | Description                                                            |
+| ------ | ------------------------------------ | ---------------------------------------------------------------------- |
+| GET    | `/api/health`                        | Health check                                                           |
+| GET    | `/api/transactions`                  | List all transactions                                                  |
+| POST   | `/api/transactions`                  | Create a transaction, auto-generating a UUID and validating positions  |
+| PUT    | `/api/transactions/{transaction_id}` | Update a transaction while enforcing funding group and position checks |
+| DELETE | `/api/transactions/{transaction_id}` | Delete a transaction and clean up any related tax records              |
+| GET    | `/api/positions`                     | Compute positions and realized P/L from transactions                   |
+| GET    | `/api/funds`                         | Return fund group snapshots (initial capital, current total, P/L)      |
+| GET    | `/api/funding-groups`                | List funding groups; creates Default JPY/USD on first launch           |
+| POST   | `/api/funding-groups`                | Create or overwrite a funding group                                    |
+| PATCH  | `/api/funding-groups/{name}`         | Update a group’s currency, initial capital, or notes                   |
+| DELETE | `/api/funding-groups/{name}`         | Delete a group (at least one must remain)                              |
+| POST   | `/api/tax/settlements`               | Record tax settlements, updating both funds and tax status             |
 
 Every endpoint returns JSON, with errors exposing a `detail` field. `tests/test_api.py` exercises critical flows such as buying/selling, tax settlement, and deletion.
 
@@ -111,8 +112,8 @@ Every endpoint returns JSON, with errors exposing a `detail` field. `tests/test_
 The UI uses tabs to organize primary workflows:
 
 - **Trades**
-  - Create buy or sell transactions with automatic normalization of quantity and tax status.
-  - Click any row to prefill the form; the action column provides a delete button with confirmation that calls the DELETE API.
+  - Create or edit buy/sell transactions with automatic normalization of quantity and tax status; the form shows an inline editing state with cancel/save controls.
+  - Click any row to prefill the form for rapid re-entry, or use the action column to edit/delete with confirmation without losing the quick-entry workflow.
   - A refresh button pulls the newest data from the backend.
 - **Positions**
   - Calculates holdings, average cost, and realized P/L directly from the transaction ledger.
@@ -134,7 +135,7 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 
 ## Roadmap
 
-- Extend trading features: editing, bulk import/export, advanced filters.
+- Extend trading features: bulk import/export, advanced filters.
 - Broaden test coverage for multi-currency and cross-group edge cases.
 - Provide backup/restore utilities (CSV/ZIP).
 - Explore packaging into a desktop shortcut or single-file binary.

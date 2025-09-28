@@ -53,13 +53,13 @@ class LocalDataRepository:
         self._write_transactions(transactions)
         return new_transaction
 
-    def update_transaction(self, updated: Transaction) -> None:
+    def update_transaction(self, updated: Transaction) -> Transaction:
         transactions = self.list_transactions()
         for index, item in enumerate(transactions):
             if item.id == updated.id:
                 transactions[index] = updated
                 self._write_transactions(transactions)
-                return
+                return updated
         raise ValueError(f"Transaction {updated.id} not found")
 
     def delete_transaction(self, transaction_id: str) -> None:

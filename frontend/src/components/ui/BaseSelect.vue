@@ -55,7 +55,7 @@
           }"
           role="option"
           :aria-selected="option.value === modelValue"
-          @click="selectOption(option)"
+          @pointerdown.prevent="onOptionPointerDown(option, index)"
           @mouseenter="highlightedIndex = index"
         >
           <span class="option-label">{{ option.label }}</span>
@@ -266,6 +266,12 @@ function scrollOptionIntoView(index: number) {
       dropdown.scrollTo({ top: offsetTop - dropdown.clientHeight + offsetHeight, behavior: "smooth" });
     }
   }
+}
+
+function onOptionPointerDown(option: SelectOption, index: number) {
+  if (option.disabled) return;
+  highlightedIndex.value = index;
+  selectOption(option);
 }
 
 function onClickOutside(event: MouseEvent | TouchEvent) {

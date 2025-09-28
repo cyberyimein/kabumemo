@@ -79,3 +79,6 @@ data/**
 
 # Coverage reports
 coverage/
+
+# API docs
+openapi*.json

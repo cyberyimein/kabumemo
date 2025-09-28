@@ -7,7 +7,8 @@ import type {
   TaxSettlementRequest,
   TaxSettlementResponse,
   Transaction,
-  TransactionCreate
+  TransactionCreate,
+  TransactionUpdate
 } from "@/types/api";
 
 const API_BASE = "/api";
@@ -63,6 +64,16 @@ export function getTransactions(): Promise<Transaction[]> {
 export function createTransaction(payload: TransactionCreate): Promise<Transaction> {
   return request<Transaction>("/transactions", {
     method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateTransaction(
+  id: string,
+  payload: TransactionUpdate
+): Promise<Transaction> {
+  return request<Transaction>(`/transactions/${encodeURIComponent(id)}`, {
+    method: "PUT",
     body: JSON.stringify(payload)
   });
 }

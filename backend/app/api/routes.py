@@ -12,6 +12,8 @@ from ..models.schemas import (
     TaxSettlementResponse,
     Transaction,
     TransactionCreate,
+    TransactionUpdate,
+    TaxStatus,
 )
 from ..services.analytics import (
     compute_fund_snapshots,
@@ -60,6 +62,53 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
                 detail="Insufficient position to complete sell order",
             )
     return repository.add_transaction(payload)
+
+
+@router.api_route(
+    "/transactions/{transaction_id}",
+    methods=["PUT", "PATCH"],
+    response_model=Transaction,
+)
+def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Transaction:
+    try:
+        repository.get_transaction(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    groups = repository.list_funding_groups()
+    if payload.funding_group not in {group.name for group in groups}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Funding group not found",
+        )
+
+    transactions = repository.list_transactions()
+    filtered_transactions = [tx for tx in transactions if tx.id != transaction_id]
+    if payload.quantity < 0:
+        available_quantity = sum(
+            tx.quantity
+            for tx in filtered_transactions
+            if tx.symbol == payload.symbol and tx.market == payload.market
+        )
+        if available_quantity + payload.quantity < -1e-9:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient position to complete sell order",
+            )
+
+    if payload.taxed == TaxStatus.NO:
+        settlements = repository.list_tax_settlements()
+        if any(item.get("transaction_id") == transaction_id for item in settlements):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot mark transaction as untaxed while a tax settlement exists",
+            )
+
+    updated_transaction = Transaction(id=transaction_id, **payload.model_dump())
+    try:
+        return repository.update_transaction(updated_transaction)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)

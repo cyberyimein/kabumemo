@@ -56,6 +56,7 @@
         :transactions="state.transactions"
         :funding-groups="state.fundingGroups"
         @create="handleCreateTransaction"
+        @update="handleUpdateTransaction"
         @delete="handleDeleteTransaction"
         @refresh="handleRefreshTransactions"
       />
@@ -106,6 +107,7 @@ import {
   getHealth,
   getPositions,
   getTransactions,
+  updateTransaction,
   settleTax,
 } from "@/services/api";
 import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
@@ -118,9 +120,16 @@ import type {
   TaxSettlementRequest,
   Transaction,
   TransactionCreate,
+  TransactionUpdate,
 } from "@/types/api";
 
 type TabId = "transactions" | "positions" | "funds" | "tax";
+
+type TransactionUpdateEvent = {
+  id: string;
+  data: TransactionUpdate;
+  onDone: (success: boolean) => void;
+};
 
 const { t, locale } = useI18n();
 
@@ -231,6 +240,24 @@ async function handleCreateTransaction(payload: TransactionCreate) {
   try {
     await createTransaction(payload);
     showNotification("success", t("transactions.toasts.created"));
+    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
+  try {
+    await updateTransaction(payload.id, payload.data);
+    payload.onDone(true);
+    showNotification("success", t("transactions.toasts.updated"));
+  } catch (error: unknown) {
+    payload.onDone(false);
+    showNotification("error", asErrorMessage(error));
+    return;
+  }
+
+  try {
     await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));

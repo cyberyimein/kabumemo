@@ -62,16 +62,67 @@ def test_transaction_lifecycle(client: TestClient):
     assert sell_body["taxed"] == "N"
     sale_id = sell_body["id"]
 
+    update_payload = {
+        "trade_date": "2025-09-15",
+        "symbol": "7203.T",
+        "quantity": -4,
+        "gross_amount": 80000,
+        "funding_group": "Default JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+        "taxed": "N",
+        "memo": "Adjust lot size",
+    }
+    update_resp = client.put(f"/api/transactions/{sale_id}", json=update_payload)
+    assert update_resp.status_code == 200, update_resp.text
+    assert update_resp.json()["quantity"] == -4
+
+    taxed_yes_payload = {**update_payload, "taxed": "Y"}
+    mark_taxed_resp = client.put(f"/api/transactions/{sale_id}", json=taxed_yes_payload)
+    assert mark_taxed_resp.status_code == 200, mark_taxed_resp.text
+    assert mark_taxed_resp.json()["taxed"] == "Y"
+
+    revert_untaxed_resp = client.put(f"/api/transactions/{sale_id}", json=update_payload)
+    assert revert_untaxed_resp.status_code == 200, revert_untaxed_resp.text
+    assert revert_untaxed_resp.json()["taxed"] == "N"
+
+    patch_resp = client.patch(
+        f"/api/transactions/{sale_id}",
+        json={**update_payload, "taxed": "Y"},
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+    assert patch_resp.json()["taxed"] == "Y"
+
+    patch_revert_resp = client.patch(
+        f"/api/transactions/{sale_id}",
+        json=update_payload,
+    )
+    assert patch_revert_resp.status_code == 200, patch_revert_resp.text
+    assert patch_revert_resp.json()["taxed"] == "N"
+
+    oversell_resp = client.put(
+        f"/api/transactions/{sale_id}",
+        json={**update_payload, "quantity": -20},
+    )
+    assert oversell_resp.status_code == 400
+
+    not_found_resp = client.put("/api/transactions/not-found", json=update_payload)
+    assert not_found_resp.status_code == 404
+
     pos_resp = client.get("/api/positions")
     assert pos_resp.status_code == 200
     positions = pos_resp.json()
-    assert positions[0]["quantity"] == 5
-    assert positions[0]["realized_pl"] == 15000
+    assert positions[0]["quantity"] == 6
+    assert positions[0]["realized_pl"] == 20000
 
     funds_resp = client.get("/api/funds")
     assert funds_resp.status_code == 200
     funds = {item["name"]: item for item in funds_resp.json()}
-    assert funds["Default JPY"]["current_total"] == -60000
+    default_fund = funds["Default JPY"]
+    assert default_fund["cash_balance"] == -70000
+    assert default_fund["holding_cost"] == 90000
+    assert default_fund["current_total"] == 20000
+    assert default_fund["total_pl"] == 20000
 
     tax_payload = {
         "transaction_id": sale_id,
@@ -83,9 +134,20 @@ def test_transaction_lifecycle(client: TestClient):
     assert tax_resp.status_code == 200, tax_resp.text
     assert tax_resp.json()["new_tax_status"] == "Y"
 
+    revert_after_settlement = client.put(
+        f"/api/transactions/{sale_id}",
+        json=update_payload,
+    )
+    assert revert_after_settlement.status_code == 400
+    assert "untaxed" in revert_after_settlement.text
+
     funds_after_tax = client.get("/api/funds").json()
     funds_map = {item["name"]: item for item in funds_after_tax}
-    assert funds_map["Default JPY"]["current_total"] == -61000
+    after_tax_default = funds_map["Default JPY"]
+    assert after_tax_default["cash_balance"] == -71000
+    assert after_tax_default["holding_cost"] == 90000
+    assert after_tax_default["current_total"] == 19000
+    assert after_tax_default["total_pl"] == 19000
 
     second_tax = client.post("/api/tax/settlements", json=tax_payload)
     assert second_tax.status_code == 400
@@ -102,3 +164,82 @@ def test_transaction_lifecycle(client: TestClient):
 
     delete_again = client.delete(f"/api/transactions/{sale_id}")
     assert delete_again.status_code == 404
+
+
+def test_positions_include_pending_sell():
+    from datetime import date
+
+    from app.models.schemas import Currency, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_positions
+
+    buy = Transaction(
+        id="buy-b",
+        trade_date=date(2025, 8, 4),
+        symbol="8306",
+        quantity=100,
+        gross_amount=200000,
+        funding_group="Default JPY",
+        cash_currency=Currency.JPY,
+        market=Market.JP,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    sell = Transaction(
+        id="sell-a",
+        trade_date=date(2025, 8, 4),
+        symbol="8306",
+        quantity=-100,
+        gross_amount=210000,
+        funding_group="Default JPY",
+        cash_currency=Currency.JPY,
+        market=Market.JP,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+
+    positions = compute_positions([buy, sell])
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "8306"
+    assert position.quantity == 0
+    assert position.realized_pl == 10000
+
+
+def test_fund_snapshot_respects_transaction_order():
+    from datetime import date
+
+    from app.models.schemas import Currency, FundingGroup, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_fund_snapshots
+
+    group = FundingGroup(name="Test Group", currency=Currency.JPY, initial_amount=0)
+    buy = Transaction(
+        id="tx-b",
+        trade_date=date(2025, 1, 2),
+        symbol="TEST",
+        quantity=1,
+        gross_amount=100,
+        funding_group=group.name,
+        cash_currency=Currency.JPY,
+        market=Market.JP,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    sell = Transaction(
+        id="tx-a",
+        trade_date=date(2025, 1, 2),
+        symbol="TEST",
+        quantity=-1,
+        gross_amount=120,
+        funding_group=group.name,
+        cash_currency=Currency.JPY,
+        market=Market.JP,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+
+    snapshots = compute_fund_snapshots([buy, sell], [group])
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot.holding_cost == 0
+    assert snapshot.cash_balance == 20
+    assert snapshot.current_total == 20

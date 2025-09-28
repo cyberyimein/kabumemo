@@ -34,7 +34,10 @@
     "actions": {
       "refresh": "刷新",
       "delete": "删除",
-      "create": "创建"
+      "create": "创建",
+      "edit": "编辑",
+      "cancel": "取消",
+      "today": "今天"
     },
     "states": {
       "none": "暂无数据"
@@ -52,7 +55,9 @@
       "USD": "USD"
     },
     "labels": {
-      "memo": "备注"
+      "memo": "备注",
+      "month": "月份",
+      "year": "年份"
     },
     "select": "选择",
     "selected": "已选择"
@@ -60,7 +65,8 @@
   "transactions": {
     "title": "交易表",
     "description": "记录所有买卖操作，可按需补充备注与纳税状态。",
-    "formTitle": "新增交易",
+  "formTitle": "新增交易",
+  "formTitleEdit": "编辑交易",
     "tradeTypeLabel": "交易类型",
     "marketLabel": "市场",
     "fields": {
@@ -82,7 +88,9 @@
       "Y": "已纳税 (Y)",
       "N": "未纳税 (N)"
     },
-    "submit": "录入交易",
+  "submit": "录入交易",
+  "update": "保存修改",
+  "editingHint": "正在编辑这条交易，保存后将覆盖，取消则回到快速录入。",
     "historyTitle": "历史交易 ({count})",
     "table": {
       "date": "日期",
@@ -99,7 +107,8 @@
     "toasts": {
       "created": "交易已记录",
       "refreshed": "交易数据已更新",
-      "deleted": "交易已删除"
+      "deleted": "交易已删除",
+      "updated": "交易已更新"
     },
     "confirm": {
       "delete": "确认删除 {date} 的 {symbol} 交易吗？"
@@ -150,6 +159,8 @@
       "name": "资金组",
       "currency": "货币",
       "initial": "初始资金",
+      "cash": "现金余额",
+      "holdingCost": "持仓成本",
       "current": "当前总额",
       "pl": "总盈亏"
     },

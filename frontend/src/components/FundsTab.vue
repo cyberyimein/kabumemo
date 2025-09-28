@@ -105,6 +105,8 @@
               <th>{{ t("funds.snapshotTable.name") }}</th>
               <th>{{ t("funds.snapshotTable.currency") }}</th>
               <th>{{ t("funds.snapshotTable.initial") }}</th>
+              <th>{{ t("funds.snapshotTable.cash") }}</th>
+              <th>{{ t("funds.snapshotTable.holdingCost") }}</th>
               <th>{{ t("funds.snapshotTable.current") }}</th>
               <th>{{ t("funds.snapshotTable.pl") }}</th>
             </tr>
@@ -117,6 +119,8 @@
               <td>{{ item.name }}</td>
               <td>{{ item.currency }}</td>
               <td>{{ formatCurrency(item.initial_amount, item.currency) }}</td>
+              <td>{{ formatCurrency(item.cash_balance, item.currency) }}</td>
+              <td>{{ formatCurrency(item.holding_cost, item.currency) }}</td>
               <td>{{ formatCurrency(item.current_total, item.currency) }}</td>
               <td
                 :class="{

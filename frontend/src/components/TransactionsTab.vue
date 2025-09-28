@@ -12,7 +12,16 @@
 
     <div class="panel-grid">
       <form class="surface" @submit.prevent="handleSubmit">
-        <h3>{{ t("transactions.formTitle") }}</h3>
+        <h3>
+          {{
+            isEditing
+              ? t("transactions.formTitleEdit")
+              : t("transactions.formTitle")
+          }}
+        </h3>
+        <p v-if="isEditing" class="editing-hint">
+          {{ t("transactions.editingHint") }}
+        </p>
         <div class="toggle-row">
           <div
             class="toggle-group"
@@ -21,14 +30,14 @@
           >
             <button
               type="button"
-              :class="['toggle-pill', { active: tradeType === 'buy' }]"
+              :class="['toggle-pill', 'trade-toggle', 'trade-buy', { active: tradeType === 'buy' }]"
               @click="setTradeType('buy')"
             >
               {{ t("common.toggle.buy") }}
             </button>
             <button
               type="button"
-              :class="['toggle-pill', { active: tradeType === 'sell' }]"
+              :class="['toggle-pill', 'trade-toggle', 'trade-sell', { active: tradeType === 'sell' }]"
               @click="setTradeType('sell')"
             >
               {{ t("common.toggle.sell") }}
@@ -41,14 +50,14 @@
           >
             <button
               type="button"
-              :class="['toggle-pill', { active: form.market === 'JP' }]"
+              :class="['toggle-pill', 'market-toggle', { active: form.market === 'JP' }]"
               @click="setMarket('JP')"
             >
               {{ t("common.toggle.market.jp") }}
             </button>
             <button
               type="button"
-              :class="['toggle-pill', { active: form.market === 'US' }]"
+              :class="['toggle-pill', 'market-toggle', { active: form.market === 'US' }]"
               @click="setMarket('US')"
             >
               {{ t("common.toggle.market.us") }}
@@ -58,7 +67,7 @@
         <div class="form-grid">
           <label>
             <span>{{ t("transactions.fields.tradeDate") }}</span>
-            <input v-model="form.trade_date" type="date" required />
+            <BaseDatePicker v-model="form.trade_date" />
           </label>
           <label>
             <span>{{ t("transactions.fields.symbol") }}</span>
@@ -112,7 +121,7 @@
               :disabled="tradeType === 'buy'"
             />
           </label>
-          <label class="full">
+          <label class="memo-field">
             <span>{{ t("transactions.fields.memo") }}</span>
             <textarea
               v-model.trim="form.memo"
@@ -122,8 +131,21 @@
           </label>
         </div>
         <div class="form-actions">
+          <button
+            v-if="isEditing"
+            type="button"
+            class="ghost-button"
+            :disabled="pending"
+            @click="cancelEditing"
+          >
+            {{ t("common.actions.cancel") }}
+          </button>
           <button type="submit" class="primary-btn" :disabled="pending">
-            {{ t("transactions.submit") }}
+            {{
+              isEditing
+                ? t("transactions.update")
+                : t("transactions.submit")
+            }}
           </button>
         </div>
       </form>
@@ -152,7 +174,7 @@
               <tr
                 v-for="tx in sortedTransactions"
                 :key="tx.id"
-                class="interactive-row"
+                :class="['interactive-row', tx.quantity < 0 ? 'is-sell' : 'is-buy']"
                 tabindex="0"
                 @click="prefillFromTransaction(tx)"
                 @keydown.enter.prevent="prefillFromTransaction(tx)"
@@ -160,7 +182,7 @@
               >
                 <td>{{ tx.trade_date }}</td>
                 <td>{{ tx.symbol }}</td>
-                <td :class="{ negative: tx.quantity < 0 }">
+                <td :class="{ negative: tx.quantity < 0, positive: tx.quantity > 0 }">
                   {{ formatNumber(tx.quantity) }}
                 </td>
                 <td>{{ formatCurrency(tx.gross_amount, tx.cash_currency) }}</td>
@@ -173,6 +195,13 @@
                     <button
                       type="button"
                       class="ghost-button"
+                      @click.stop="startEditing(tx)"
+                    >
+                      {{ t("common.actions.edit") }}
+                    </button>
+                    <button
+                      type="button"
+                      class="ghost-button danger"
                       @click.stop="confirmDelete(tx)"
                     >
                       {{ t("common.actions.delete") }}
@@ -197,24 +226,35 @@ import type {
   TaxStatus,
   Transaction,
   TransactionCreate,
+  TransactionUpdate,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
+import BaseDatePicker from "./ui/BaseDatePicker.vue";
 
 const props = defineProps<{
   transactions: Transaction[];
   fundingGroups: FundingGroup[];
 }>();
 
+type UpdateEventPayload = {
+  id: string;
+  data: TransactionUpdate;
+  onDone: (success: boolean) => void;
+};
+
 const emit = defineEmits<{
   (e: "create", payload: TransactionCreate): void;
   (e: "refresh"): void;
   (e: "delete", id: string): void;
+  (e: "update", payload: UpdateEventPayload): void;
 }>();
 
 const { t } = useI18n();
 
 const pending = ref(false);
 const tradeType = ref<"buy" | "sell">("buy");
+const editingId = ref<string | null>(null);
+const isEditing = computed(() => editingId.value !== null);
 
 type TransactionForm = TransactionCreate & { taxed: TaxStatus; memo?: string | null };
 
@@ -268,6 +308,9 @@ watch(
 watch(
   tradeType,
   (type) => {
+    if (isEditing.value) {
+      return;
+    }
     form.taxed = type === "sell" ? "N" : "Y";
   },
   { immediate: true }
@@ -316,6 +359,23 @@ function resetForm(): TransactionForm {
   };
 }
 
+function resetFormState() {
+  editingId.value = null;
+  Object.assign(form, resetForm());
+  tradeType.value = "buy";
+}
+
+function populateFormFromTransaction(tx: Transaction) {
+  form.trade_date = tx.trade_date;
+  form.symbol = tx.symbol;
+  form.funding_group = tx.funding_group;
+  form.quantity = Math.max(1, Math.floor(Math.abs(Number(tx.quantity))));
+  form.gross_amount = Math.abs(Number(tx.gross_amount));
+  form.cash_currency = tx.cash_currency;
+  form.taxed = tx.taxed;
+  form.memo = tx.memo ?? "";
+}
+
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
     minimumFractionDigits: 0,
@@ -338,14 +398,12 @@ function marketLabel(value: string): string {
 }
 
 function prefillFromTransaction(tx: Transaction) {
+  if (isEditing.value) {
+    return;
+  }
   setTradeType(tx.quantity < 0 ? "sell" : "buy");
   setMarket(tx.market === "US" ? "US" : "JP");
-  form.symbol = tx.symbol;
-  form.funding_group = tx.funding_group;
-  form.cash_currency = form.market === "JP" ? "JPY" : tx.cash_currency;
-  form.quantity = Math.max(1, Math.floor(Math.abs(Number(tx.quantity))));
-  form.gross_amount = Math.abs(Number(tx.gross_amount));
-  form.memo = tx.memo ?? "";
+  populateFormFromTransaction(tx);
 }
 
 function confirmDelete(tx: Transaction) {
@@ -360,8 +418,19 @@ function confirmDelete(tx: Transaction) {
   }
 }
 
+function startEditing(tx: Transaction) {
+  editingId.value = tx.id;
+  setTradeType(tx.quantity < 0 ? "sell" : "buy");
+  setMarket(tx.market === "US" ? "US" : "JP");
+  populateFormFromTransaction(tx);
+}
+
+function cancelEditing() {
+  resetFormState();
+}
+
 async function handleSubmit() {
-  if (!form.symbol || !form.funding_group) {
+  if (!form.trade_date || !form.symbol || !form.funding_group) {
     return;
   }
   pending.value = true;
@@ -370,7 +439,9 @@ async function handleSubmit() {
       tradeType.value === "sell"
         ? -Math.abs(Number(form.quantity))
         : Math.abs(Number(form.quantity));
-    const payload: TransactionCreate = {
+    const trimmedMemo = form.memo?.trim() ?? "";
+    const normalizedMemo = trimmedMemo.length ? trimmedMemo : null;
+    const updatePayload: TransactionUpdate = {
       trade_date: form.trade_date,
       symbol: form.symbol,
       quantity: signedQuantity,
@@ -379,11 +450,37 @@ async function handleSubmit() {
       cash_currency: form.cash_currency,
       market: form.market,
       taxed: form.taxed,
-      memo: form.memo?.trim() || undefined,
+      memo: normalizedMemo,
     };
-    emit("create", payload);
-    Object.assign(form, resetForm());
-    tradeType.value = "buy";
+
+    if (isEditing.value && editingId.value) {
+      await new Promise<void>((resolve) => {
+        emit("update", {
+          id: editingId.value as string,
+          data: updatePayload,
+          onDone: (success: boolean) => {
+            if (success) {
+              resetFormState();
+            }
+            resolve();
+          },
+        });
+      });
+    } else {
+      const createPayload: TransactionCreate = {
+        trade_date: updatePayload.trade_date,
+        symbol: updatePayload.symbol,
+        quantity: updatePayload.quantity,
+        gross_amount: updatePayload.gross_amount,
+        funding_group: updatePayload.funding_group,
+        cash_currency: updatePayload.cash_currency,
+        market: updatePayload.market,
+        taxed: updatePayload.taxed,
+        memo: normalizedMemo ?? undefined,
+      };
+      emit("create", createPayload);
+      resetFormState();
+    }
   } finally {
     pending.value = false;
   }
@@ -480,6 +577,79 @@ function setMarket(type: "JP" | "US") {
   color: var(--text-faint);
 }
 
+.editing-hint {
+  margin: -0.25rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  align-items: end;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.form-grid label span {
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.form-grid input,
+.form-grid textarea {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(14, 30, 64, 0.06);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus {
+  outline: none;
+  border-color: rgba(15, 167, 201, 0.45);
+  box-shadow: 0 0 0 3px rgba(15, 167, 201, 0.12);
+}
+
+.form-grid textarea {
+  min-height: 4.25rem;
+  resize: vertical;
+}
+
+.memo-field {
+  align-self: stretch;
+}
+
+@media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .memo-field {
+    grid-column: 1;
+  }
+}
+
 
 
 .toggle-row {
@@ -528,10 +698,36 @@ function setMarket(type: "JP" | "US") {
   color: var(--accent);
 }
 
-.toggle-pill.active {
+.toggle-pill.active:not(.trade-toggle) {
   background: linear-gradient(180deg, var(--panel), rgba(15, 167, 201, 0.12));
   color: var(--accent);
   box-shadow: inset 0 0 0 1px rgba(15, 167, 201, 0.2), 0 6px 12px -8px rgba(15, 167, 201, 0.45);
+  transform: translateY(-1px);
+}
+
+.toggle-pill.trade-toggle {
+  font-weight: 600;
+}
+
+.toggle-pill.trade-buy:hover {
+  color: var(--accent-cyan);
+}
+
+.toggle-pill.trade-sell:hover {
+  color: var(--accent-red);
+}
+
+.toggle-pill.trade-buy.active {
+  background: linear-gradient(180deg, rgba(15, 167, 201, 0.16), rgba(15, 167, 201, 0.28));
+  color: var(--accent-cyan);
+  box-shadow: inset 0 0 0 1px rgba(15, 167, 201, 0.35), 0 6px 14px -8px rgba(15, 167, 201, 0.45);
+  transform: translateY(-1px);
+}
+
+.toggle-pill.trade-sell.active {
+  background: linear-gradient(180deg, rgba(225, 57, 45, 0.18), rgba(225, 57, 45, 0.32));
+  color: var(--accent-red);
+  box-shadow: inset 0 0 0 1px rgba(225, 57, 45, 0.35), 0 6px 14px -8px rgba(225, 57, 45, 0.45);
   transform: translateY(-1px);
 }
 
@@ -559,6 +755,7 @@ function setMarket(type: "JP" | "US") {
 .row-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .ghost-button {
@@ -572,10 +769,24 @@ function setMarket(type: "JP" | "US") {
   transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 
-.ghost-button:hover {
+.ghost-button:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: rgba(15, 167, 201, 0.45);
+  background: rgba(15, 167, 201, 0.08);
+}
+
+.ghost-button.danger {
   color: var(--accent-red);
   border-color: rgba(244, 67, 54, 0.45);
+}
+
+.ghost-button.danger:hover:not(:disabled) {
   background: rgba(244, 67, 54, 0.08);
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .table-scroll thead {
@@ -600,7 +811,45 @@ function setMarket(type: "JP" | "US") {
 
 .interactive-row {
   cursor: pointer;
-  transition: background var(--transition), transform var(--transition);
+  transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.interactive-row.is-buy {
+  background: linear-gradient(90deg, rgba(15, 167, 201, 0.08), transparent 65%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-cyan) 18%, transparent),
+    transparent 65%
+  );
+  box-shadow: inset 0.35rem 0 0 rgba(15, 167, 201, 0.35);
+  box-shadow: inset 0.35rem 0 0 color-mix(in srgb, var(--accent-cyan) 55%, transparent);
+}
+
+.interactive-row.is-sell {
+  background: linear-gradient(90deg, rgba(225, 57, 45, 0.08), transparent 65%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-red) 20%, transparent),
+    transparent 65%
+  );
+  box-shadow: inset 0.35rem 0 0 rgba(225, 57, 45, 0.35);
+  box-shadow: inset 0.35rem 0 0 color-mix(in srgb, var(--accent-red) 55%, transparent);
+}
+
+.interactive-row.is-buy:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-cyan) 32%, transparent),
+    transparent 65%
+  );
+}
+
+.interactive-row.is-sell:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-red) 34%, transparent),
+    transparent 65%
+  );
 }
 
 .interactive-row:focus-visible {
@@ -619,6 +868,11 @@ function setMarket(type: "JP" | "US") {
 
 .negative {
   color: var(--accent-red);
+  font-weight: 600;
+}
+
+.positive {
+  color: var(--accent-cyan);
   font-weight: 600;
 }
 

@@ -8,6 +8,7 @@ from ..models.schemas import (
     Currency,
     FundSnapshot,
     FundingGroup,
+    Market,
     Position,
     TaxSettlementRequest,
     TaxSettlementResponse,
@@ -19,8 +20,15 @@ from ..storage.repository import LocalDataRepository
 
 def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
     inventory: dict[str, dict[str, float]] = {}
+    markets: dict[str, Market] = {}
     realized: defaultdict[str, float] = defaultdict(float)
-    sorted_transactions = sorted(transactions, key=lambda t: (t.trade_date, t.id))
+    sorted_transactions = [
+        tx
+        for _, tx in sorted(
+            enumerate(transactions),
+            key=lambda pair: (pair[1].trade_date, pair[0]),
+        )
+    ]
 
     for tx in sorted_transactions:
         record = inventory.setdefault(
@@ -28,12 +36,11 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
             {
                 "quantity": 0.0,
                 "total_cost": 0.0,
-                "market": tx.market,
             },
         )
+        markets[tx.symbol] = tx.market
         current_qty = record["quantity"]
         total_cost = record["total_cost"]
-        avg_cost = total_cost / current_qty if current_qty else 0.0
 
         if tx.quantity > 0:
             new_qty = current_qty + tx.quantity
@@ -50,7 +57,6 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
                 new_cost = 0.0
         record["quantity"] = new_qty
         record["total_cost"] = max(new_cost, 0.0)
-        record["market"] = tx.market
 
     positions: list[Position] = []
     for symbol, record in inventory.items():
@@ -63,7 +69,7 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
                 quantity=round(qty, 4),
                 average_cost=round(avg_cost, 4),
                 realized_pl=round(realized[symbol], 2),
-                market=record["market"],
+                market=markets[symbol],
             )
         )
     return positions
@@ -76,32 +82,77 @@ def compute_fund_snapshots(
 ) -> list[FundSnapshot]:
     group_lookup = {group.name: group for group in funding_groups}
     cash_flows: defaultdict[str, float] = defaultdict(float)
+    inventories: dict[str, dict[str, dict[str, float]]] = {}
 
-    for tx in transactions:
+    sorted_transactions = [
+        tx
+        for _, tx in sorted(
+            enumerate(transactions),
+            key=lambda pair: (pair[1].trade_date, pair[0]),
+        )
+    ]
+
+    for tx in sorted_transactions:
         amount = tx.gross_amount
         if tx.quantity > 0:
             cash_flows[tx.funding_group] -= amount
         else:
             cash_flows[tx.funding_group] += amount
 
+        group_inventory = inventories.setdefault(tx.funding_group, {})
+        record = group_inventory.setdefault(
+            tx.symbol,
+            {
+                "quantity": 0.0,
+                "total_cost": 0.0,
+            },
+        )
+        current_qty = record["quantity"]
+        total_cost = record["total_cost"]
+
+        if tx.quantity > 0:
+            record["quantity"] = current_qty + tx.quantity
+            record["total_cost"] = total_cost + amount
+        else:
+            sell_qty = min(-tx.quantity, current_qty)
+            if current_qty <= 0:
+                continue
+            avg_cost = total_cost / current_qty if current_qty else 0.0
+            cost_reduction = avg_cost * sell_qty
+            new_qty = current_qty + tx.quantity
+            new_cost = total_cost - cost_reduction
+            if new_qty <= 1e-9:
+                new_qty = 0.0
+                new_cost = 0.0
+            record["quantity"] = new_qty
+            record["total_cost"] = max(new_cost, 0.0)
+
     if tax_settlements:
         for entry in tax_settlements:
             group = entry.get("funding_group")
-            if not group:
+            if not isinstance(group, str):
                 continue
-            amount = float(entry.get("amount"))
+            amount_raw = entry.get("amount")
+            if not isinstance(amount_raw, (int, float, str)):
+                continue
+            amount = float(amount_raw)
             cash_flows[group] -= amount
 
     snapshots: list[FundSnapshot] = []
     for name, group in group_lookup.items():
         delta = cash_flows.get(name, 0.0)
-        current_total = group.initial_amount + delta
-        total_pl = delta
+        cash_balance = group.initial_amount + delta
+        holdings = inventories.get(name, {})
+        holding_cost = sum(record["total_cost"] for record in holdings.values())
+        current_total = cash_balance + holding_cost
+        total_pl = current_total - group.initial_amount
         snapshots.append(
             FundSnapshot(
                 name=name,
                 currency=group.currency,
                 initial_amount=group.initial_amount,
+                cash_balance=round(cash_balance, 2),
+                holding_cost=round(holding_cost, 2),
                 current_total=round(current_total, 2),
                 total_pl=round(total_pl, 2),
             )

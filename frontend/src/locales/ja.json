@@ -34,7 +34,10 @@
     "actions": {
       "refresh": "更新",
       "delete": "削除",
-      "create": "作成"
+      "create": "作成",
+      "edit": "編集",
+      "cancel": "キャンセル",
+      "today": "今日"
     },
     "states": {
       "none": "データがありません"
@@ -52,7 +55,9 @@
       "USD": "USD"
     },
     "labels": {
-      "memo": "メモ"
+      "memo": "メモ",
+      "month": "月",
+      "year": "年"
     },
     "select": "選択",
     "selected": "選択済み"
@@ -60,7 +65,8 @@
   "transactions": {
     "title": "取引",
     "description": "売買取引を記録し、必要に応じてメモと納税状況を追加します。",
-    "formTitle": "取引を追加",
+  "formTitle": "取引を追加",
+  "formTitleEdit": "取引を編集",
     "tradeTypeLabel": "取引種別",
     "marketLabel": "市場",
     "fields": {
@@ -82,7 +88,9 @@
       "Y": "納税済み (Y)",
       "N": "未納税 (N)"
     },
-    "submit": "取引を登録",
+  "submit": "取引を登録",
+  "update": "変更を保存",
+  "editingHint": "既存の取引を編集中です。保存すると更新、キャンセルでクイック入力に戻ります。",
     "historyTitle": "取引履歴 ({count})",
     "table": {
       "date": "日付",
@@ -99,7 +107,8 @@
     "toasts": {
       "created": "取引を登録しました",
       "refreshed": "取引データを更新しました",
-      "deleted": "取引を削除しました"
+      "deleted": "取引を削除しました",
+      "updated": "取引を更新しました"
     },
     "confirm": {
       "delete": "取引 {symbol}（{date}）を削除しますか？"
@@ -150,6 +159,8 @@
       "name": "資金グループ",
       "currency": "通貨",
       "initial": "初期資金",
+      "cash": "現金残高",
+      "holdingCost": "保有コスト",
       "current": "現在総額",
       "pl": "累計損益"
     },

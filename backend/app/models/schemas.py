@@ -68,6 +68,10 @@ class Transaction(TransactionBase):
     id: str
 
 
+class TransactionUpdate(TransactionBase):
+    pass
+
+
 class Position(BaseModel):
     symbol: str
     quantity: float
@@ -80,6 +84,8 @@ class FundSnapshot(BaseModel):
     name: str
     currency: Currency
     initial_amount: float
+    cash_balance: float
+    holding_cost: float
     current_total: float
     total_pl: float
 

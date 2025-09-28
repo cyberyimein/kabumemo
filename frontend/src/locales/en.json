@@ -34,7 +34,10 @@
     "actions": {
       "refresh": "Refresh",
       "delete": "Delete",
-      "create": "Create"
+      "create": "Create",
+      "edit": "Edit",
+      "cancel": "Cancel",
+      "today": "Today"
     },
     "states": {
       "none": "No data yet"
@@ -52,7 +55,9 @@
       "USD": "USD"
     },
     "labels": {
-      "memo": "Memo"
+      "memo": "Memo",
+      "month": "Month",
+      "year": "Year"
     },
     "select": "Select",
     "selected": "Selected"
@@ -60,7 +65,8 @@
   "transactions": {
     "title": "Trades",
     "description": "Record buy and sell transactions with optional notes and tax status.",
-    "formTitle": "New Transaction",
+  "formTitle": "New Transaction",
+  "formTitleEdit": "Edit Transaction",
     "tradeTypeLabel": "Trade Type",
     "marketLabel": "Market",
     "fields": {
@@ -82,7 +88,9 @@
       "Y": "Taxed (Y)",
       "N": "Untaxed (N)"
     },
-    "submit": "Submit Transaction",
+  "submit": "Submit Transaction",
+  "update": "Save Changes",
+  "editingHint": "Editing existing trade. Save to apply changes or cancel to go back to quick entry.",
     "historyTitle": "Transaction History ({count})",
     "table": {
       "date": "Date",
@@ -99,7 +107,8 @@
     "toasts": {
       "created": "Trade recorded",
       "refreshed": "Transactions updated",
-      "deleted": "Trade deleted"
+      "deleted": "Trade deleted",
+      "updated": "Trade updated"
     },
     "confirm": {
       "delete": "Delete the trade {symbol} on {date}?"
@@ -150,6 +159,8 @@
       "name": "Group",
       "currency": "Currency",
       "initial": "Initial Amount",
+      "cash": "Cash Balance",
+      "holdingCost": "Holding Cost",
       "current": "Current Total",
       "pl": "Total P&L"
     },

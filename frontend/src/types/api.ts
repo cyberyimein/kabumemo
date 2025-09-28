@@ -31,6 +31,8 @@ export interface TransactionCreate extends Omit<TransactionBase, "taxed"> {
   taxed?: TaxStatus;
 }
 
+export type TransactionUpdate = TransactionBase;
+
 export interface Transaction extends TransactionBase {
   id: string;
 }
@@ -47,6 +49,8 @@ export interface FundSnapshot {
   name: string;
   currency: Currency;
   initial_amount: number;
+  cash_balance: number;
+  holding_cost: number;
   current_total: number;
   total_pl: number;
 }
