@@ -2,7 +2,7 @@
 
 ## Introduction
 
-I originally leaned on Notion to keep track of trades, but the more I used it, the more I felt the tool was fighting me. I kept bending data into Notion’s format with elaborate workarounds. In an era where AI can even write test cases, I decided to hand the steering wheel to GPT‑5 Codex and “vibe code” this project together.
+I originally leaned on Notion to keep track of trades, but the more I used it, the more I felt the tool was fighting me. I kept bending data into Notion’s format with elaborate workarounds. In an era where AI can even write test cases, I decided to hand the steering wheel to GPT‑5 Codex and vibe coding this project together.
 
 Kabumemo isn’t revolutionary—just a straightforward CRUD app. I put it together over a weekend while gaming and guiding the AI, spending only a handful of tokens. Maybe soon anyone will be able to turn their specific needs into a product they can host on the cloud or on their own hardware. When AI and compute feel as ubiquitous as electricity and running water, everyone will share that ability to create.
 
