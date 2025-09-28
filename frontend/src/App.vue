@@ -79,8 +79,12 @@
       <TaxTab
         v-else
         :pending-transactions="pendingTaxTransactions"
+        :transactions="state.transactions"
+        :settlements="state.taxSettlements"
         :funding-groups="state.fundingGroups"
         @settle="handleSettleTax"
+        @update="handleUpdateTaxSettlement"
+        @remove="handleDeleteTaxSettlement"
         @refresh="handleRefreshTransactions"
       />
     </template>
@@ -107,8 +111,11 @@ import {
   getHealth,
   getPositions,
   getTransactions,
+  getTaxSettlements,
   updateTransaction,
+  updateTaxSettlement,
   settleTax,
+  deleteTaxSettlement,
 } from "@/services/api";
 import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
 import type { LocaleCode } from "@/i18n";
@@ -118,6 +125,8 @@ import type {
   HealthResponse,
   Position,
   TaxSettlementRequest,
+  TaxSettlementRecord,
+  TaxSettlementUpdate,
   Transaction,
   TransactionCreate,
   TransactionUpdate,
@@ -149,6 +158,7 @@ const state = reactive({
   positions: [] as Position[],
   funds: [] as FundSnapshot[],
   fundingGroups: [] as FundingGroup[],
+  taxSettlements: [] as TaxSettlementRecord[],
 });
 
 const currentTab = ref<TabId>("transactions");
@@ -188,16 +198,18 @@ onMounted(async () => {
 async function refreshAllData(showToast = false) {
   try {
     loading.value = true;
-    const [groups, transactions, positions, funds] = await Promise.all([
+    const [groups, transactions, positions, funds, settlements] = await Promise.all([
       getFundingGroups(),
       getTransactions(),
       getPositions(),
       getFunds(),
+      getTaxSettlements(),
     ]);
     state.fundingGroups = groups;
     state.transactions = transactions;
     state.positions = positions;
     state.funds = funds;
+    state.taxSettlements = settlements;
     if (showToast) {
       showNotification("success", t("app.toasts.dataRefreshed"));
     }
@@ -258,7 +270,7 @@ async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
   }
 
   try {
-    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -268,14 +280,14 @@ async function handleDeleteTransaction(id: string) {
   try {
     await deleteTransaction(id);
     showNotification("success", t("transactions.toasts.deleted"));
-    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
 }
 
 async function handleRefreshTransactions() {
-  await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+  await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
   showNotification("success", t("transactions.toasts.refreshed"));
 }
 
@@ -313,7 +325,30 @@ async function handleSettleTax(payload: TaxSettlementRequest) {
   try {
     await settleTax(payload);
     showNotification("success", t("tax.toasts.updated"));
-    await Promise.all([reloadTransactions(), reloadFunds()]);
+    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleUpdateTaxSettlement(event: {
+  id: string;
+  data: TaxSettlementUpdate;
+}) {
+  try {
+    await updateTaxSettlement(event.id, event.data);
+    showNotification("success", t("tax.toasts.updated"));
+    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleDeleteTaxSettlement(id: string) {
+  try {
+    await deleteTaxSettlement(id);
+    showNotification("success", t("tax.toasts.deleted"));
+    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -333,6 +368,10 @@ async function reloadFunds() {
 
 async function reloadFundingGroups() {
   state.fundingGroups = await getFundingGroups();
+}
+
+async function reloadTaxSettlements() {
+  state.taxSettlements = await getTaxSettlements();
 }
 </script>
 

@@ -58,13 +58,20 @@
       </div>
 
       <form class="surface" @submit.prevent="handleSubmit">
-        <h3>{{ t("tax.formTitle") }}</h3>
+        <h3>{{ formTitle }}</h3>
 
-        <p v-if="!form.transaction_id" class="hint">
+        <p v-if="!form.transaction_id && !isEditing" class="hint">
           {{ t("tax.hint") }}
         </p>
+        <p v-else-if="isEditing" class="hint editing">
+          {{
+            t("tax.editingHint", {
+              date: selectedSettlement ? formatDate(selectedSettlement.recorded_at) : ""
+            })
+          }}
+        </p>
 
-        <template v-else>
+        <template v-if="form.transaction_id || isEditing">
           <div class="inline-info">
             <span>
               {{
@@ -108,6 +115,7 @@
               <BaseSelect
                 v-model="form.currency"
                 :options="currencyOptions"
+                :disabled="isEditing"
               />
             </label>
             <label v-if="form.currency === 'USD'">
@@ -117,7 +125,7 @@
                 type="number"
                 step="0.0001"
                 min="0"
-                :placeholder="t('tax.fields.rate')"
+                required
               />
             </label>
             <label v-if="form.currency === 'USD'" class="full">
@@ -130,13 +138,8 @@
                 :placeholder="t('tax.convertedHint')"
               />
               <span class="conversion-hint" aria-live="polite">
-                {{
-                  t("tax.autoConversion", { auto: autoConvertedUsdDisplay })
-                }}
-                ·
-                {{
-                  t("tax.submitAmount", { value: convertedUsdDisplay })
-                }}
+                {{ t("tax.autoConversion", { auto: autoConvertedUsdDisplay }) }} ·
+                {{ t("tax.submitAmount", { value: convertedUsdDisplay }) }}
               </span>
             </label>
             <label class="full">
@@ -149,12 +152,78 @@
             </label>
           </div>
           <div class="form-actions">
+            <button
+              v-if="isEditing"
+              type="button"
+              class="ghost-btn"
+              @click="cancelEditing"
+            >
+              {{ t("tax.cancelEdit") }}
+            </button>
             <button type="submit" class="primary-btn" :disabled="pending">
-              {{ t("tax.submit") }}
+              {{ submitLabel }}
             </button>
           </div>
         </template>
       </form>
+
+      <div class="surface">
+        <h3>{{ t("tax.historyTitle", { count: settlements.length }) }}</h3>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{{ t("tax.historyTable.recordedAt") }}</th>
+                <th>{{ t("tax.historyTable.tradeDate") }}</th>
+                <th>{{ t("tax.historyTable.symbol") }}</th>
+                <th>{{ t("tax.historyTable.amount") }}</th>
+                <th>{{ t("tax.historyTable.converted") }}</th>
+                <th>{{ t("tax.historyTable.fundingGroup") }}</th>
+                <th>{{ t("tax.historyTable.actions") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!settlementRows.length">
+                <td colspan="7" class="empty">{{ t("tax.historyEmpty") }}</td>
+              </tr>
+              <tr
+                v-for="row in settlementRows"
+                :key="row.record.id"
+                :class="{ active: editingSettlementId === row.record.id }"
+              >
+                <td>{{ formatDate(row.record.recorded_at) }}</td>
+                <td>{{ row.transaction?.trade_date ?? "—" }}</td>
+                <td>{{ row.transaction?.symbol ?? row.record.transaction_id }}</td>
+                <td>{{ formatCurrency(row.record.amount, row.record.currency) }}</td>
+                <td>{{ formatCurrency(row.record.jpy_equivalent, "JPY") }}</td>
+                <td>{{ row.record.funding_group }}</td>
+                <td class="actions-cell">
+                  <button
+                    type="button"
+                    class="select-btn"
+                    :disabled="pending || editingSettlementId === row.record.id"
+                    @click="selectSettlement(row.record.id)"
+                  >
+                    {{
+                      editingSettlementId === row.record.id
+                        ? t("tax.selected")
+                        : t("common.actions.edit")
+                    }}
+                  </button>
+                  <button
+                    type="button"
+                    class="select-btn danger"
+                    :disabled="pending"
+                    @click="handleRemoveSettlement(row.record.id)"
+                  >
+                    {{ t("common.actions.delete") }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -166,43 +235,124 @@ import { useI18n } from "vue-i18n";
 import type {
   Currency,
   FundingGroup,
+  TaxSettlementRecord,
   TaxSettlementRequest,
+  TaxSettlementUpdate,
   Transaction,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
 
+type TaxSettlementUpdateEvent = {
+  id: string;
+  data: TaxSettlementUpdate;
+};
+
 const props = defineProps<{
   pendingTransactions: Transaction[];
+  transactions: Transaction[];
+  settlements: TaxSettlementRecord[];
   fundingGroups: FundingGroup[];
 }>();
 
 const emit = defineEmits<{
   (e: "settle", payload: TaxSettlementRequest): void;
+  (e: "update", payload: TaxSettlementUpdateEvent): void;
+  (e: "remove", settlementId: string): void;
   (e: "refresh"): void;
 }>();
 
 const pending = ref(false);
+const editingSettlementId = ref<string | null>(null);
 
 const { t } = useI18n();
 
-type TaxFormState = TaxSettlementRequest & {
-  converted_usd?: number | null;
+type TaxFormState = {
+  transaction_id: string;
+  funding_group: string;
+  amount: number;
+  currency: Currency;
+  exchange_rate: number | null;
+  converted_usd: number | null;
 };
 
-const form = reactive<TaxFormState>({
+const createDefaultFormState = (): TaxFormState => ({
   transaction_id: "",
   funding_group: "",
   amount: 0,
   currency: "JPY",
-  exchange_rate: undefined,
-  converted_usd: undefined,
+  exchange_rate: null,
+  converted_usd: null,
 });
+
+const form = reactive<TaxFormState>(createDefaultFormState());
+
+const isEditing = computed(() => editingSettlementId.value !== null);
+
+const formTitle = computed(() =>
+  isEditing.value ? t("tax.formTitleEdit") : t("tax.formTitle")
+);
+
+const submitLabel = computed(() =>
+  isEditing.value ? t("tax.submitUpdate") : t("tax.submit")
+);
+
+const transactionLookup = computed(() => {
+  const map = new Map<string, Transaction>();
+  props.transactions.forEach((item) => map.set(item.id, item));
+  return map;
+});
+
+const fundingGroupLookup = computed(() => {
+  const map = new Map<string, FundingGroup>();
+  props.fundingGroups.forEach((group) => map.set(group.name, group));
+  return map;
+});
+
+const selectedTransaction = computed(() =>
+  form.transaction_id ? transactionLookup.value.get(form.transaction_id) ?? null : null
+);
+
+const selectedSettlement = computed(() =>
+  editingSettlementId.value
+    ? props.settlements.find((item) => item.id === editingSettlementId.value) ?? null
+    : null
+);
 
 const amountLabel = computed(() =>
   form.currency === "USD"
     ? t("tax.fields.amountJPY")
     : t("tax.fields.amount")
 );
+
+const sortedPending = computed(() =>
+  [...props.pendingTransactions].sort((a, b) =>
+    a.trade_date < b.trade_date ? 1 : -1
+  )
+);
+
+const sortedSettlements = computed(() =>
+  [...props.settlements].sort((a, b) =>
+    a.recorded_at < b.recorded_at ? 1 : -1
+  )
+);
+
+const settlementRows = computed(() =>
+  sortedSettlements.value.map((record) => ({
+    record,
+    transaction: transactionLookup.value.get(record.transaction_id) ?? null,
+  }))
+);
+
+const currencyOptions = computed(() => [
+  {
+    label: t("common.currencies.JPY"),
+    value: "JPY" as Currency,
+  },
+  {
+    label: t("common.currencies.USD"),
+    value: "USD" as Currency,
+  },
+]);
 
 const autoConvertedUsdAmount = computed(() => {
   if (form.currency !== "USD") {
@@ -220,11 +370,15 @@ const manualUsdAmount = computed(() => {
   if (form.currency !== "USD") {
     return null;
   }
-  const override = Number(form.converted_usd);
-  if (Number.isNaN(override) || override <= 0) {
+  const override = form.converted_usd;
+  if (override == null) {
     return null;
   }
-  return Number(override.toFixed(2));
+  const numeric = Number(override);
+  if (Number.isNaN(numeric) || numeric <= 0) {
+    return null;
+  }
+  return Number(numeric.toFixed(2));
 });
 
 const effectiveUsdAmount = computed(() => {
@@ -258,59 +412,24 @@ const autoConvertedUsdDisplay = computed(() => {
   }).format(autoConvertedUsdAmount.value);
 });
 
-const sortedPending = computed(() =>
-  [...props.pendingTransactions].sort((a, b) =>
-    a.trade_date < b.trade_date ? 1 : -1
-  )
-);
-
-const currencyOptions = computed(() => [
-  {
-    label: t("common.currencies.JPY"),
-    value: "JPY" as Currency,
-  },
-  {
-    label: t("common.currencies.USD"),
-    value: "USD" as Currency,
-  },
-]);
-
-const selectedTransaction = computed(() =>
-  props.pendingTransactions.find((item) => item.id === form.transaction_id)
-);
-
-watch(selectedTransaction, (tx) => {
-  if (!tx) {
-    return;
-  }
-  form.funding_group = tx.funding_group;
-  const group = props.fundingGroups.find(
-    (item) => item.name === tx.funding_group
-  );
-  form.currency = group?.currency ?? "JPY";
-  if (form.currency !== "USD") {
-    form.exchange_rate = undefined;
-  }
-  form.amount = 0;
-  form.converted_usd = undefined;
-});
-
 watch(
-  () => form.currency,
-  (currency) => {
-    if (currency !== "USD") {
-      form.exchange_rate = undefined;
-      form.converted_usd = undefined;
+  () => form.amount,
+  (value) => {
+    if (value == null || Number.isNaN(value) || value < 0) {
+      form.amount = 0;
     }
   }
 );
 
 watch(
-  () => form.amount,
+  () => form.exchange_rate,
   (value) => {
+    if (value == null) {
+      return;
+    }
     const numeric = Number(value);
-    if (Number.isNaN(numeric) || numeric < 0) {
-      form.amount = 0;
+    if (Number.isNaN(numeric) || numeric <= 0) {
+      form.exchange_rate = null;
     }
   }
 );
@@ -328,8 +447,79 @@ watch(
   }
 );
 
+watch(
+  () => form.currency,
+  (currency) => {
+    if (currency !== "USD") {
+      form.exchange_rate = null;
+      form.converted_usd = null;
+    }
+  }
+);
+
+watch(selectedTransaction, (tx) => {
+  if (!tx) {
+    return;
+  }
+  form.funding_group = tx.funding_group;
+  if (isEditing.value) {
+    return;
+  }
+  const group = fundingGroupLookup.value.get(tx.funding_group);
+  form.currency = group?.currency ?? "JPY";
+  if (form.currency !== "USD") {
+    form.exchange_rate = null;
+    form.converted_usd = null;
+  }
+  form.amount = 0;
+});
+
+function resetForm() {
+  Object.assign(form, createDefaultFormState());
+  editingSettlementId.value = null;
+}
+
 function selectTransaction(id: string) {
+  if (editingSettlementId.value) {
+    resetForm();
+  }
+  const transaction = props.pendingTransactions.find((item) => item.id === id);
   form.transaction_id = id;
+  form.funding_group = transaction?.funding_group ?? "";
+  if (transaction) {
+    const group = fundingGroupLookup.value.get(transaction.funding_group);
+    form.currency = group?.currency ?? "JPY";
+  }
+}
+
+function selectSettlement(id: string) {
+  const record = props.settlements.find((item) => item.id === id);
+  if (!record) {
+    return;
+  }
+  editingSettlementId.value = record.id;
+  form.transaction_id = record.transaction_id;
+  form.funding_group = record.funding_group;
+  form.currency = record.currency;
+  form.exchange_rate = record.exchange_rate ?? null;
+  if (record.currency === "USD") {
+    form.amount = record.jpy_equivalent;
+    form.converted_usd = record.amount;
+  } else {
+    form.amount = record.amount;
+    form.converted_usd = null;
+  }
+}
+
+function cancelEditing() {
+  resetForm();
+}
+
+function handleRemoveSettlement(id: string) {
+  emit("remove", id);
+  if (editingSettlementId.value === id) {
+    resetForm();
+  }
 }
 
 function formatNumber(value: number): string {
@@ -340,45 +530,76 @@ function formatNumber(value: number): string {
 }
 
 function formatCurrency(value: number, currency: string): string {
-  const locale = currency === "USD" ? "en-US" : "ja-JP";
-  return new Intl.NumberFormat(locale, {
+  return new Intl.NumberFormat(currency === "USD" ? "en-US" : "ja-JP", {
     style: "currency",
     currency,
   }).format(value);
+}
+
+function formatDate(value: string): string {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(dt);
+}
+
+function normalizedAmount(): number | null {
+  if (form.currency === "USD") {
+    const usdAmount = effectiveUsdAmount.value;
+    if (usdAmount == null || usdAmount <= 0) {
+      return null;
+    }
+    return usdAmount;
+  }
+  const value = Number(form.amount);
+  if (Number.isNaN(value) || value <= 0) {
+    return null;
+  }
+  return value;
 }
 
 async function handleSubmit() {
   if (!form.transaction_id) {
     return;
   }
-  if (
-    form.currency === "USD" &&
-    (effectiveUsdAmount.value === null || effectiveUsdAmount.value <= 0)
-  ) {
+  const amount = normalizedAmount();
+  if (amount === null) {
+    return;
+  }
+  if (form.currency === "USD" && (form.exchange_rate == null || form.exchange_rate <= 0)) {
+    return;
+  }
+  const groupCurrency = fundingGroupLookup.value.get(form.funding_group)?.currency;
+  if (groupCurrency && groupCurrency !== form.currency) {
     return;
   }
   pending.value = true;
   try {
-    const amountYen = Number(form.amount);
-    const normalizedAmount =
-      form.currency === "USD" && effectiveUsdAmount.value !== null
-        ? effectiveUsdAmount.value
-        : amountYen;
-    const payload: TaxSettlementRequest = {
-      transaction_id: form.transaction_id,
-      funding_group: form.funding_group,
-      amount: normalizedAmount,
-      currency: form.currency,
-      exchange_rate:
-        form.currency === "USD" ? Number(form.exchange_rate) || undefined : undefined,
-    };
-    emit("settle", payload);
-    form.transaction_id = "";
-    form.funding_group = "";
-    form.amount = 0;
-    form.currency = "JPY";
-    form.exchange_rate = undefined;
-    form.converted_usd = undefined;
+    if (isEditing.value && editingSettlementId.value) {
+      const patch: TaxSettlementUpdate = {
+        amount,
+        funding_group: form.funding_group,
+        exchange_rate:
+          form.currency === "USD"
+            ? form.exchange_rate ?? undefined
+            : undefined,
+      };
+      emit("update", { id: editingSettlementId.value, data: patch });
+    } else {
+      const payload: TaxSettlementRequest = {
+        transaction_id: form.transaction_id,
+        funding_group: form.funding_group,
+        amount,
+        currency: form.currency,
+        exchange_rate:
+          form.currency === "USD"
+            ? form.exchange_rate ?? undefined
+            : undefined,
+      };
+      emit("settle", payload);
+    }
+    resetForm();
   } finally {
     pending.value = false;
   }
@@ -472,7 +693,7 @@ async function handleSubmit() {
 }
 
 .table-scroll table {
-  min-width: 580px;
+  min-width: 720px;
 }
 
 .table-scroll thead {
@@ -493,6 +714,10 @@ async function handleSubmit() {
 
 .table-scroll tbody tr:hover {
   background: rgba(15, 167, 201, 0.08);
+}
+
+.table-scroll tbody tr.active {
+  background: rgba(15, 167, 201, 0.15);
 }
 
 .empty {
@@ -529,6 +754,36 @@ async function handleSubmit() {
   box-shadow: none;
 }
 
+.select-btn.danger {
+  border-color: rgba(222, 49, 72, 0.45);
+  background: rgba(222, 49, 72, 0.12);
+  color: var(--accent-red);
+}
+
+.actions-cell {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ghost-btn {
+  border-radius: 999px;
+  border: 1px dashed var(--divider);
+  background: transparent;
+  color: var(--text-dim);
+  padding: 0.45rem 1rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.ghost-btn:hover {
+  color: var(--accent);
+  border-color: rgba(15, 167, 201, 0.6);
+}
+
 
 .inline-info {
   display: flex;
@@ -541,6 +796,10 @@ async function handleSubmit() {
 .hint {
   color: var(--text-faint);
   letter-spacing: 0.5px;
+}
+
+.hint.editing {
+  color: var(--accent);
 }
 
 .conversion-hint {

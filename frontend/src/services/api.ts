@@ -5,7 +5,8 @@ import type {
   HealthResponse,
   Position,
   TaxSettlementRequest,
-  TaxSettlementResponse,
+  TaxSettlementRecord,
+  TaxSettlementUpdate,
   Transaction,
   TransactionCreate,
   TransactionUpdate
@@ -123,10 +124,30 @@ export function deleteFundingGroup(name: string): Promise<void> {
 }
 
 // Tax settlements ----------------------------------------------------------------
-export function settleTax(payload: TaxSettlementRequest): Promise<TaxSettlementResponse> {
-  return request<TaxSettlementResponse>("/tax/settlements", {
+export function settleTax(payload: TaxSettlementRequest): Promise<TaxSettlementRecord> {
+  return request<TaxSettlementRecord>("/tax/settlements", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function getTaxSettlements(): Promise<TaxSettlementRecord[]> {
+  return request<TaxSettlementRecord[]>("/tax/settlements");
+}
+
+export function updateTaxSettlement(
+  id: string,
+  payload: TaxSettlementUpdate
+): Promise<TaxSettlementRecord> {
+  return request<TaxSettlementRecord>(`/tax/settlements/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteTaxSettlement(id: string): Promise<void> {
+  return request<void>(`/tax/settlements/${encodeURIComponent(id)}`, {
+    method: "DELETE"
   });
 }
 

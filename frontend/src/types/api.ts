@@ -60,15 +60,24 @@ export interface TaxSettlementRequest {
   funding_group: string;
   amount: number;
   currency: Currency;
-  exchange_rate?: number | null;
+  exchange_rate?: number;
 }
 
-export interface TaxSettlementResponse {
+export interface TaxSettlementRecord {
+  id: string;
   transaction_id: string;
-  amount_paid: number;
+  funding_group: string;
+  amount: number;
   currency: Currency;
+  exchange_rate?: number | null;
   jpy_equivalent: number;
-  new_tax_status: TaxStatus;
+  recorded_at: string;
+}
+
+export interface TaxSettlementUpdate {
+  amount?: number;
+  funding_group?: string;
+  exchange_rate?: number;
 }
 
 export interface HealthResponse {

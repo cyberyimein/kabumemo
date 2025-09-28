@@ -117,7 +117,8 @@
   "positions": {
     "title": "持仓表",
     "description": "根据交易自动计算剩余仓位、平均成本与落地盈亏。",
-    "listTitle": "持仓列表 ({count})",
+    "activeTitle": "当前持仓 ({count})",
+    "closedTitle": "历史持仓 ({count})",
     "table": {
       "symbol": "股票",
       "market": "市场",
@@ -125,7 +126,8 @@
       "cost": "平均成本",
       "pl": "落地盈亏"
     },
-    "empty": "暂无持仓数据",
+    "emptyActive": "暂无持仓",
+    "emptyClosed": "暂无历史持仓",
     "toasts": {
       "refreshed": "持仓数据已更新"
     }
@@ -190,8 +192,10 @@
     "empty": "目前没有未纳税的卖出记录。",
     "select": "选择",
     "selected": "已选择",
-    "formTitle": "记录纳税",
+  "formTitle": "记录纳税",
+  "formTitleEdit": "编辑纳税记录",
     "hint": "请先从左侧选择一笔卖出交易。",
+  "editingHint": "正在修改 {date} 登记的纳税记录。保存后会立即刷新资金与交易数据。",
     "inline": {
       "symbol": "股票：{value}",
       "fundingGroup": "资金组：{value}",
@@ -204,12 +208,26 @@
       "rate": "汇率 (JPY/USD)",
       "converted": "折合美元 (可选)"
     },
-    "convertedHint": "默认使用自动换算，可手动覆盖",
+    "convertedHint": "默认提供自动换算，可根据实际调整",
     "autoConversion": "自动换算：{auto}",
     "submitAmount": "提交金额：{value}",
-    "submit": "记录纳税",
+  "submit": "记录纳税",
+    "submitUpdate": "保存修改",
+    "cancelEdit": "取消编辑",
     "toasts": {
-      "updated": "纳税记录已更新"
-    }
+      "updated": "纳税记录已更新",
+      "deleted": "纳税记录已删除"
+    },
+    "historyTitle": "已登记纳税 ({count})",
+    "historyTable": {
+      "recordedAt": "登记日期",
+      "tradeDate": "交易日期",
+      "symbol": "股票/交易",
+      "amount": "纳税金额",
+      "converted": "折合日元",
+      "fundingGroup": "资金组",
+      "actions": "操作"
+    },
+    "historyEmpty": "尚未记录纳税信息。"
   }
 }

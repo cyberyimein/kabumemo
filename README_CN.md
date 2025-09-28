@@ -55,10 +55,10 @@ python -m venv .venv
 ./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-如需自定义数据目录，设置 `Kabumemo_DATA_DIR` 环境变量即可：
+如需自定义数据目录，设置 `KABUCOUNT_DATA_DIR` 环境变量即可：
 
 ```bash
-set Kabumemo_DATA_DIR=D:\Kabumemo-data
+set KABUCOUNT_DATA_DIR=D:\Kabumemo-data
 ```
 
 运行测试：
@@ -87,20 +87,23 @@ npm run lint    # 可选：运行 ESLint
 
 ## 后端 API 速览
 
-| Method | Path                                 | 描述                                         |
-| ------ | ------------------------------------ | -------------------------------------------- |
-| GET    | `/api/health`                        | 健康检查                                     |
-| GET    | `/api/transactions`                  | 列出全部交易                                 |
-| POST   | `/api/transactions`                  | 新增交易，自动生成 UUID 并执行仓位校验       |
-| PUT    | `/api/transactions/{transaction_id}` | 更新指定交易，持续校验资金组与持仓余额       |
-| DELETE | `/api/transactions/{transaction_id}` | 删除指定交易，同时清理关联纳税记录           |
-| GET    | `/api/positions`                     | 根据交易计算仓位与已实现盈亏                 |
-| GET    | `/api/funds`                         | 输出资金组快照（初始资金、当前总额、收益）   |
-| GET    | `/api/funding-groups`                | 列出资金组，首次启动自动创建 Default JPY/USD |
-| POST   | `/api/funding-groups`                | 新增/覆盖资金组                              |
-| PATCH  | `/api/funding-groups/{name}`         | 更新资金组的货币、初始资金或备注             |
-| DELETE | `/api/funding-groups/{name}`         | 删除资金组（需至少保留一个）                 |
-| POST   | `/api/tax/settlements`               | 记录纳税结果，更新资金组与交易税务状态       |
+| Method | Path                                   | 描述                                         |
+| ------ | -------------------------------------- | -------------------------------------------- |
+| GET    | `/api/health`                          | 健康检查                                     |
+| GET    | `/api/transactions`                    | 列出全部交易                                 |
+| POST   | `/api/transactions`                    | 新增交易，自动生成 UUID 并执行仓位校验       |
+| PUT    | `/api/transactions/{transaction_id}`   | 更新指定交易，持续校验资金组与持仓余额       |
+| DELETE | `/api/transactions/{transaction_id}`   | 删除指定交易，同时清理关联纳税记录           |
+| GET    | `/api/positions`                       | 根据交易计算仓位与已实现盈亏                 |
+| GET    | `/api/funds`                           | 输出资金组快照（初始资金、当前总额、收益）   |
+| GET    | `/api/funding-groups`                  | 列出资金组，首次启动自动创建 Default JPY/USD |
+| POST   | `/api/funding-groups`                  | 新增/覆盖资金组                              |
+| PATCH  | `/api/funding-groups/{name}`           | 更新资金组的货币、初始资金或备注             |
+| DELETE | `/api/funding-groups/{name}`           | 删除资金组（需至少保留一个）                 |
+| POST   | `/api/tax/settlements`                 | 记录纳税结果（返回带 ID 的记录），同步资金组 |
+| GET    | `/api/tax/settlements`                 | 查看全部纳税记录一览                         |
+| PATCH  | `/api/tax/settlements/{settlement_id}` | 更新纳税金额、货币或汇率                     |
+| DELETE | `/api/tax/settlements/{settlement_id}` | 删除纳税记录并恢复交易的纳税状态             |
 
 所有接口均返回 JSON，错误响应统一包含 `detail` 字段。后端依靠 `tests/test_api.py` 覆盖交易买卖、纳税与删除等关键流程。
 
@@ -118,7 +121,8 @@ npm run lint    # 可选：运行 ESLint
   - 删除时会检查至少保留一个资金组，文案已国际化。
 - **纳税 (Tax)**
   - 自动筛选未纳税的卖出交易。
-  - 填写纳税金额/汇率后提交，后端会把交易 tax 状态改为已纳税并刷新资金快照。
+  - 填写纳税金额/汇率后提交，后端会把交易税务状态改为已纳税并刷新资金快照。
+  - 下方提供「已登记纳税」列表，可查看、编辑或删除既有纳税记录，操作完成后自动刷新资金与交易数据。
 
 界面支持中/英/日三语言切换，通知栏会在数据刷新、创建、删除等操作后提示结果。
 

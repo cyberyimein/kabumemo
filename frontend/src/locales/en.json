@@ -117,7 +117,8 @@
   "positions": {
     "title": "Positions",
     "description": "Calculate remaining holdings, average cost, and realized P&L from trades.",
-    "listTitle": "Position List ({count})",
+    "activeTitle": "Active positions ({count})",
+    "closedTitle": "Closed positions ({count})",
     "table": {
       "symbol": "Ticker",
       "market": "Market",
@@ -125,7 +126,8 @@
       "cost": "Average Cost",
       "pl": "Realized P&L"
     },
-    "empty": "No positions yet",
+    "emptyActive": "No active positions",
+    "emptyClosed": "No closed positions",
     "toasts": {
       "refreshed": "Positions updated"
     }
@@ -190,8 +192,10 @@
     "empty": "No untaxed sell trades.",
     "select": "Select",
     "selected": "Selected",
-    "formTitle": "Record Tax",
+  "formTitle": "Record Tax",
+  "formTitleEdit": "Edit Tax Record",
     "hint": "Choose a sell trade from the left first.",
+  "editingHint": "Editing the tax record logged on {date}. Saving will refresh funds and trades immediately.",
     "inline": {
       "symbol": "Stock: {value}",
       "fundingGroup": "Group: {value}",
@@ -208,8 +212,22 @@
     "autoConversion": "Auto: {auto}",
     "submitAmount": "Submitting: {value}",
     "submit": "Record Tax",
+    "submitUpdate": "Save Changes",
+    "cancelEdit": "Cancel Editing",
     "toasts": {
-      "updated": "Tax record updated"
-    }
+      "updated": "Tax record updated",
+      "deleted": "Tax record removed"
+    },
+    "historyTitle": "Recorded Taxes ({count})",
+    "historyTable": {
+      "recordedAt": "Recorded",
+      "tradeDate": "Trade Date",
+      "symbol": "Stock / Trade",
+      "amount": "Tax Amount",
+      "converted": "JPY Equivalent",
+      "fundingGroup": "Funding Group",
+      "actions": "Actions"
+    },
+    "historyEmpty": "No tax settlements captured yet."
   }
 }

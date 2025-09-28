@@ -131,8 +131,14 @@ def test_transaction_lifecycle(client: TestClient):
         "currency": "JPY",
     }
     tax_resp = client.post("/api/tax/settlements", json=tax_payload)
-    assert tax_resp.status_code == 200, tax_resp.text
-    assert tax_resp.json()["new_tax_status"] == "Y"
+    assert tax_resp.status_code == 201, tax_resp.text
+    tax_body = tax_resp.json()
+    assert tax_body["transaction_id"] == sale_id
+    assert tax_body["currency"] == "JPY"
+    assert tax_body["exchange_rate"] is None
+    assert tax_body["jpy_equivalent"] == pytest.approx(1000)
+    assert "recorded_at" in tax_body
+    settlement_id = tax_body["id"]
 
     revert_after_settlement = client.put(
         f"/api/transactions/{sale_id}",
@@ -152,11 +158,17 @@ def test_transaction_lifecycle(client: TestClient):
     second_tax = client.post("/api/tax/settlements", json=tax_payload)
     assert second_tax.status_code == 400
 
+    settlements_list = client.get("/api/tax/settlements").json()
+    assert any(item["id"] == settlement_id for item in settlements_list)
+
     delete_resp = client.delete(f"/api/transactions/{sale_id}")
     assert delete_resp.status_code == 204
 
     remaining_transactions = client.get("/api/transactions").json()
     assert all(tx["id"] != sale_id for tx in remaining_transactions)
+
+    remaining_settlements = client.get("/api/tax/settlements").json()
+    assert all(item["transaction_id"] != sale_id for item in remaining_settlements)
 
     positions_after_delete = client.get("/api/positions").json()
     assert positions_after_delete[0]["quantity"] == 10
@@ -243,3 +255,134 @@ def test_fund_snapshot_respects_transaction_order():
     assert snapshot.holding_cost == 0
     assert snapshot.cash_balance == 20
     assert snapshot.current_total == 20
+
+
+def test_tax_settlement_update_and_delete(client: TestClient):
+    buy_payload = {
+        "trade_date": "2025-09-01",
+        "symbol": "6758.T",
+        "quantity": 20,
+        "gross_amount": 200000,
+        "funding_group": "Default JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+    }
+    sell_payload = {
+        "trade_date": "2025-09-20",
+        "symbol": "6758.T",
+        "quantity": -10,
+        "gross_amount": 130000,
+        "funding_group": "Default JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+    }
+
+    buy_resp = client.post("/api/transactions", json=buy_payload)
+    assert buy_resp.status_code == 201
+
+    sell_resp = client.post("/api/transactions", json=sell_payload)
+    assert sell_resp.status_code == 201
+    sell_id = sell_resp.json()["id"]
+
+    tax_payload = {
+        "transaction_id": sell_id,
+        "funding_group": "Default JPY",
+        "amount": 1500,
+        "currency": "JPY",
+    }
+    tax_resp = client.post("/api/tax/settlements", json=tax_payload)
+    assert tax_resp.status_code == 201
+    settlement_id = tax_resp.json()["id"]
+
+    patch_resp = client.patch(
+        f"/api/tax/settlements/{settlement_id}",
+        json={"amount": 1750},
+    )
+    assert patch_resp.status_code == 200
+    patch_body = patch_resp.json()
+    assert patch_body["amount"] == 1750
+    assert patch_body["jpy_equivalent"] == pytest.approx(1750)
+
+    invalid_group = client.patch(
+        f"/api/tax/settlements/{settlement_id}",
+        json={"funding_group": "Default USD"},
+    )
+    assert invalid_group.status_code == 400
+
+    delete_resp = client.delete(f"/api/tax/settlements/{settlement_id}")
+    assert delete_resp.status_code == 204
+
+    post_delete = client.get("/api/transactions").json()
+    target_transaction = next(item for item in post_delete if item["id"] == sell_id)
+    assert target_transaction["taxed"] == "N"
+
+    remaining_settlements = client.get("/api/tax/settlements").json()
+    assert all(item["id"] != settlement_id for item in remaining_settlements)
+
+
+def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
+    buy_payload = {
+        "trade_date": "2025-09-01",
+        "symbol": "AAPL",
+        "quantity": 10,
+        "gross_amount": 15000,
+        "funding_group": "Default USD",
+        "cash_currency": "USD",
+        "market": "US",
+    }
+    sell_payload = {
+        "trade_date": "2025-09-10",
+        "symbol": "AAPL",
+        "quantity": -5,
+        "gross_amount": 8200,
+        "funding_group": "Default USD",
+        "cash_currency": "USD",
+        "market": "US",
+    }
+
+    assert client.post("/api/transactions", json=buy_payload).status_code == 201
+    sell_resp = client.post("/api/transactions", json=sell_payload)
+    assert sell_resp.status_code == 201, sell_resp.text
+    sale_id = sell_resp.json()["id"]
+
+    missing_rate_payload = {
+        "transaction_id": sale_id,
+        "funding_group": "Default USD",
+        "amount": 120,
+        "currency": "USD",
+    }
+    missing_rate_resp = client.post("/api/tax/settlements", json=missing_rate_payload)
+    assert missing_rate_resp.status_code == 422
+
+    tax_payload = {
+        "transaction_id": sale_id,
+        "funding_group": "Default USD",
+        "amount": 120,
+        "currency": "USD",
+        "exchange_rate": 147.85,
+    }
+    tax_resp = client.post("/api/tax/settlements", json=tax_payload)
+    assert tax_resp.status_code == 201, tax_resp.text
+    body = tax_resp.json()
+    assert body["currency"] == "USD"
+    assert body["amount"] == pytest.approx(120)
+    assert body["exchange_rate"] == pytest.approx(147.85)
+    assert body["jpy_equivalent"] == pytest.approx(17742.0)
+
+    settlement_id = body["id"]
+
+    update_resp = client.patch(
+        f"/api/tax/settlements/{settlement_id}",
+        json={"amount": 150, "exchange_rate": 149.1},
+    )
+    assert update_resp.status_code == 200, update_resp.text
+    updated = update_resp.json()
+    assert updated["amount"] == pytest.approx(150)
+    assert updated["exchange_rate"] == pytest.approx(149.1)
+    assert updated["jpy_equivalent"] == pytest.approx(22365.0)
+
+    settlements = client.get("/api/tax/settlements").json()
+    record = next(item for item in settlements if item["id"] == settlement_id)
+    assert record["currency"] == "USD"
+    assert record["funding_group"] == "Default USD"
+    assert record["jpy_equivalent"] == pytest.approx(22365.0)

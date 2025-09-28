@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Iterable, List
 from uuid import uuid4
@@ -13,6 +14,7 @@ from ..models.schemas import (
     TaxStatus,
     Transaction,
     TransactionCreate,
+    TaxSettlementRecord,
 )
 
 
@@ -70,7 +72,7 @@ class LocalDataRepository:
         self._write_transactions(remaining_transactions)
 
         settlements = self.list_tax_settlements()
-        filtered_settlements = [item for item in settlements if item.get("transaction_id") != transaction_id]
+        filtered_settlements = [item for item in settlements if item.transaction_id != transaction_id]
         if len(filtered_settlements) != len(settlements):
             self._write_tax_settlements(filtered_settlements)
 
@@ -131,27 +133,111 @@ class LocalDataRepository:
         ]
         self._write_funding_groups(defaults)
 
-    def mark_transaction_taxed(self, transaction_id: str) -> Transaction:
+    def set_transaction_tax_status(self, transaction_id: str, status: TaxStatus) -> Transaction:
         transactions = self.list_transactions()
         for index, item in enumerate(transactions):
             if item.id == transaction_id:
-                updated = item.model_copy(update={"taxed": TaxStatus.YES})
+                updated = item.model_copy(update={"taxed": status})
                 transactions[index] = updated
                 self._write_transactions(transactions)
                 return updated
         raise ValueError(f"Transaction {transaction_id} not found")
 
-    # Tax settlements ---------------------------------------------------------------
-    def list_tax_settlements(self) -> list[dict[str, object]]:
-        payload = json.loads(self._tax_settlements_path.read_text(encoding="utf-8") or "[]")
-        return list(payload)
+    def mark_transaction_taxed(self, transaction_id: str) -> Transaction:
+        return self.set_transaction_tax_status(transaction_id, TaxStatus.YES)
 
-    def add_tax_settlement(self, settlement: dict[str, object]) -> None:
+    def mark_transaction_untaxed(self, transaction_id: str) -> Transaction:
+        return self.set_transaction_tax_status(transaction_id, TaxStatus.NO)
+
+    # Tax settlements ---------------------------------------------------------------
+    def list_tax_settlements(self) -> list[TaxSettlementRecord]:
+        payload = json.loads(self._tax_settlements_path.read_text(encoding="utf-8") or "[]")
+        records: list[TaxSettlementRecord] = []
+        changed = False
+        for item in payload:
+            data = dict(item)
+            if not data.get("id"):
+                data["id"] = str(uuid4())
+                changed = True
+            if not data.get("recorded_at"):
+                data["recorded_at"] = date.today().isoformat()
+                changed = True
+
+            currency_value = data.get("currency")
+            if isinstance(currency_value, str):
+                try:
+                    data["currency"] = Currency(currency_value)
+                except ValueError:
+                    data["currency"] = Currency.JPY
+                    changed = True
+
+            amount_value = data.get("amount")
+            if isinstance(amount_value, str):
+                try:
+                    data["amount"] = float(amount_value)
+                except ValueError:
+                    data["amount"] = 0.0
+                    changed = True
+
+            exchange_rate = data.get("exchange_rate")
+            if exchange_rate in ("", None):
+                data["exchange_rate"] = None
+            elif isinstance(exchange_rate, str):
+                try:
+                    data["exchange_rate"] = float(exchange_rate)
+                except ValueError:
+                    data["exchange_rate"] = None
+                    changed = True
+
+            jpy_equivalent = data.get("jpy_equivalent")
+            if isinstance(jpy_equivalent, str):
+                try:
+                    data["jpy_equivalent"] = float(jpy_equivalent)
+                except ValueError:
+                    data["jpy_equivalent"] = None
+                    changed = True
+
+            record = TaxSettlementRecord(**data)
+            normalized = record.model_dump(mode="json")
+            if normalized != data:
+                changed = True
+            records.append(record)
+        if changed:
+            self._write_tax_settlements(records)
+        return records
+
+    def get_tax_settlement(self, settlement_id: str) -> TaxSettlementRecord:
+        for record in self.list_tax_settlements():
+            if record.id == settlement_id:
+                return record
+        raise ValueError(f"Tax settlement {settlement_id} not found")
+
+    def add_tax_settlement(self, settlement: TaxSettlementRecord) -> TaxSettlementRecord:
         settlements = self.list_tax_settlements()
         settlements.append(settlement)
         self._write_tax_settlements(settlements)
+        return settlement
 
-    def _write_tax_settlements(self, settlements: Iterable[dict[str, object]]) -> None:
+    def update_tax_settlement(
+        self, settlement_id: str, updated: TaxSettlementRecord
+    ) -> TaxSettlementRecord:
+        settlements = self.list_tax_settlements()
+        for index, record in enumerate(settlements):
+            if record.id == settlement_id:
+                settlements[index] = updated
+                self._write_tax_settlements(settlements)
+                return updated
+        raise ValueError(f"Tax settlement {settlement_id} not found")
+
+    def delete_tax_settlement(self, settlement_id: str) -> None:
+        settlements = self.list_tax_settlements()
+        updated = [item for item in settlements if item.id != settlement_id]
+        if len(updated) == len(settlements):
+            raise ValueError(f"Tax settlement {settlement_id} not found")
+        self._write_tax_settlements(updated)
+
+    def _write_tax_settlements(self, settlements: Iterable[TaxSettlementRecord]) -> None:
+        serialized = [record.model_dump(mode="json") for record in settlements]
         self._tax_settlements_path.write_text(
-            json.dumps(list(settlements), ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
         )

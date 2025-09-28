@@ -9,7 +9,8 @@ from ..models.schemas import (
     HealthResponse,
     Position,
     TaxSettlementRequest,
-    TaxSettlementResponse,
+    TaxSettlementRecord,
+    TaxSettlementUpdate,
     Transaction,
     TransactionCreate,
     TransactionUpdate,
@@ -18,7 +19,9 @@ from ..models.schemas import (
 from ..services.analytics import (
     compute_fund_snapshots,
     compute_positions,
+    delete_tax_settlement,
     record_tax_settlement,
+    update_tax_settlement,
 )
 from ..storage.repository import LocalDataRepository
 
@@ -98,7 +101,7 @@ def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Trans
 
     if payload.taxed == TaxStatus.NO:
         settlements = repository.list_tax_settlements()
-        if any(item.get("transaction_id") == transaction_id for item in settlements):
+        if any(item.transaction_id == transaction_id for item in settlements):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot mark transaction as untaxed while a tax settlement exists",
@@ -168,12 +171,41 @@ def delete_funding_group(name: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/tax/settlements", response_model=list[TaxSettlementRecord])
+def list_tax_settlements() -> list[TaxSettlementRecord]:
+    return repository.list_tax_settlements()
+
+
 @router.post(
     "/tax/settlements",
-    response_model=TaxSettlementResponse,
+    response_model=TaxSettlementRecord,
+    status_code=status.HTTP_201_CREATED,
 )
-def settle_tax(payload: TaxSettlementRequest) -> TaxSettlementResponse:
+def settle_tax(payload: TaxSettlementRequest) -> TaxSettlementRecord:
     try:
         return record_tax_settlement(repository, payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/tax/settlements/{settlement_id}",
+    response_model=TaxSettlementRecord,
+)
+def edit_tax_settlement(settlement_id: str, payload: TaxSettlementUpdate) -> TaxSettlementRecord:
+    try:
+        return update_tax_settlement(repository, settlement_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/tax/settlements/{settlement_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_tax_settlement(settlement_id: str) -> Response:
+    try:
+        delete_tax_settlement(repository, settlement_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

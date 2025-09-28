@@ -117,7 +117,8 @@
   "positions": {
     "title": "ポジション",
     "description": "取引から残高、平均取得単価、実現損益を計算します。",
-    "listTitle": "ポジション一覧 ({count})",
+    "activeTitle": "保有中 ({count})",
+    "closedTitle": "解消済み ({count})",
     "table": {
       "symbol": "銘柄",
       "market": "市場",
@@ -125,7 +126,8 @@
       "cost": "平均取得単価",
       "pl": "実現損益"
     },
-    "empty": "ポジションがありません",
+    "emptyActive": "保有中のポジションがありません",
+    "emptyClosed": "解消済みのポジションがありません",
     "toasts": {
       "refreshed": "ポジションデータを更新しました"
     }
@@ -190,8 +192,10 @@
     "empty": "未納税の売却取引はありません。",
     "select": "選択",
     "selected": "選択済み",
-    "formTitle": "納税を記録",
+  "formTitle": "納税を記録",
+  "formTitleEdit": "納税記録を編集",
     "hint": "左側から売却取引を選択してください。",
+  "editingHint": "{date} に登録した納税記録を編集中です。保存すると資金と取引が即時に更新されます。",
     "inline": {
       "symbol": "銘柄：{value}",
       "fundingGroup": "資金グループ：{value}",
@@ -208,8 +212,22 @@
     "autoConversion": "自動換算：{auto}",
     "submitAmount": "送信額：{value}",
     "submit": "納税を記録",
+    "submitUpdate": "変更を保存",
+    "cancelEdit": "編集をキャンセル",
     "toasts": {
-      "updated": "納税情報を更新しました"
-    }
+      "updated": "納税情報を更新しました",
+      "deleted": "納税記録を削除しました"
+    },
+    "historyTitle": "登録済み納税 ({count})",
+    "historyTable": {
+      "recordedAt": "登録日",
+      "tradeDate": "取引日",
+      "symbol": "銘柄 / 取引",
+      "amount": "納税額",
+      "converted": "円換算",
+      "fundingGroup": "資金グループ",
+      "actions": "操作"
+    },
+    "historyEmpty": "納税記録がまだありません。"
   }
 }

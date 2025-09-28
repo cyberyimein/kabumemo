@@ -10,58 +10,91 @@
       </button>
     </header>
 
-    <div class="surface">
-      <h3>{{ t("positions.listTitle", { count: positions.length }) }}</h3>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t("positions.table.symbol") }}</th>
-              <th>{{ t("positions.table.market") }}</th>
-              <th>{{ t("positions.table.quantity") }}</th>
-              <th>{{ t("positions.table.cost") }}</th>
-              <th>{{ t("positions.table.pl") }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!positions.length">
-              <td colspan="5" class="empty">{{ t("positions.empty") }}</td>
-            </tr>
-            <tr v-for="item in positions" :key="item.symbol">
-              <td>{{ item.symbol }}</td>
-              <td>{{ marketLabel(item.market) }}</td>
-              <td>{{ formatNumber(item.quantity) }}</td>
-              <td>{{ formatCurrency(item.average_cost, item.market) }}</td>
-              <td
-                :class="{
-                  positive: item.realized_pl >= 0,
-                  negative: item.realized_pl < 0,
-                }"
-              >
-                {{ formatProfit(item.realized_pl, item.market) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="surface-group">
+      <section class="surface">
+        <h3>{{ t("positions.activeTitle", { count: activePositions.length }) }}</h3>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{{ t("positions.table.symbol") }}</th>
+                <th>{{ t("positions.table.market") }}</th>
+                <th>{{ t("positions.table.quantity") }}</th>
+                <th>{{ t("positions.table.cost") }}</th>
+                <th>{{ t("positions.table.pl") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!activePositions.length">
+                <td colspan="5" class="empty">{{ t("positions.emptyActive") }}</td>
+              </tr>
+              <tr v-for="item in activePositions" :key="`${item.symbol}-${item.market}`">
+                <td>{{ item.symbol }}</td>
+                <td>{{ marketLabel(item.market) }}</td>
+                <td>{{ formatNumber(item.quantity) }}</td>
+                <td>{{ formatCurrency(item.average_cost, item.market) }}</td>
+                <td :class="profitClass(item.realized_pl)">
+                  {{ formatProfit(item.realized_pl, item.market) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="surface">
+        <h3>{{ t("positions.closedTitle", { count: closedPositions.length }) }}</h3>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{{ t("positions.table.symbol") }}</th>
+                <th>{{ t("positions.table.market") }}</th>
+                <th>{{ t("positions.table.quantity") }}</th>
+                <th>{{ t("positions.table.pl") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!closedPositions.length">
+                <td colspan="4" class="empty">{{ t("positions.emptyClosed") }}</td>
+              </tr>
+              <tr v-for="item in closedPositions" :key="`${item.symbol}-${item.market}`">
+                <td>{{ item.symbol }}</td>
+                <td>{{ marketLabel(item.market) }}</td>
+                <td>{{ formatNumber(item.quantity) }}</td>
+                <td :class="profitClass(item.realized_pl)">
+                  {{ formatProfit(item.realized_pl, item.market) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type { Position } from "@/types/api";
 
-defineProps<{
-  positions: Position[];
-}>();
+const props = defineProps<{ positions: Position[] }>();
 
 defineEmits<{
   (e: "refresh"): void;
 }>();
 
 const { t } = useI18n();
+
+const activePositions = computed(() =>
+  props.positions.filter((item) => Math.abs(item.quantity) > 1e-9)
+);
+
+const closedPositions = computed(() =>
+  props.positions.filter((item) => Math.abs(item.quantity) <= 1e-9)
+);
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
@@ -89,6 +122,13 @@ function formatProfit(value: number, market: string): string {
     currency: market === "US" ? "USD" : "JPY",
   });
   return formatter.format(value);
+}
+
+function profitClass(value: number): Record<string, boolean> {
+  return {
+    positive: value >= 0,
+    negative: value < 0,
+  };
 }
 
 function marketLabel(value: string): string {

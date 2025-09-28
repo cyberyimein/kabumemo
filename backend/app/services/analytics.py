@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 from typing import Iterable
+from uuid import uuid4
 
 from ..models.schemas import (
     Currency,
@@ -10,8 +11,9 @@ from ..models.schemas import (
     FundingGroup,
     Market,
     Position,
+    TaxSettlementRecord,
     TaxSettlementRequest,
-    TaxSettlementResponse,
+    TaxSettlementUpdate,
     TaxStatus,
     Transaction,
 )
@@ -78,7 +80,7 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
 def compute_fund_snapshots(
     transactions: Iterable[Transaction],
     funding_groups: Iterable[FundingGroup],
-    tax_settlements: Iterable[dict[str, object]] | None = None,
+    tax_settlements: Iterable[TaxSettlementRecord] | None = None,
 ) -> list[FundSnapshot]:
     group_lookup = {group.name: group for group in funding_groups}
     cash_flows: defaultdict[str, float] = defaultdict(float)
@@ -129,14 +131,7 @@ def compute_fund_snapshots(
 
     if tax_settlements:
         for entry in tax_settlements:
-            group = entry.get("funding_group")
-            if not isinstance(group, str):
-                continue
-            amount_raw = entry.get("amount")
-            if not isinstance(amount_raw, (int, float, str)):
-                continue
-            amount = float(amount_raw)
-            cash_flows[group] -= amount
+            cash_flows[entry.funding_group] -= entry.amount
 
     snapshots: list[FundSnapshot] = []
     for name, group in group_lookup.items():
@@ -163,7 +158,7 @@ def compute_fund_snapshots(
 def record_tax_settlement(
     repo: LocalDataRepository,
     payload: TaxSettlementRequest,
-) -> TaxSettlementResponse:
+) -> TaxSettlementRecord:
     transaction = repo.get_transaction(payload.transaction_id)
     if transaction.taxed == TaxStatus.YES:
         raise ValueError("Transaction already marked as taxed")
@@ -175,25 +170,57 @@ def record_tax_settlement(
         raise ValueError("Tax payment currency must match funding group currency")
 
     repo.mark_transaction_taxed(payload.transaction_id)
-    settlement = {
-        "transaction_id": payload.transaction_id,
-        "amount": payload.amount,
-        "currency": payload.currency.value,
-        "exchange_rate": payload.exchange_rate,
-        "funding_group": payload.funding_group,
-        "recorded_at": date.today().isoformat(),
-    }
-    repo.add_tax_settlement(settlement)
-
-    jpy_equivalent = payload.amount
-    if payload.currency == Currency.USD:
-        assert payload.exchange_rate is not None
-        jpy_equivalent = payload.amount * payload.exchange_rate
-
-    return TaxSettlementResponse(
+    record = TaxSettlementRecord(
+        id=str(uuid4()),
         transaction_id=payload.transaction_id,
-        amount_paid=payload.amount,
+        amount=payload.amount,
         currency=payload.currency,
-        jpy_equivalent=round(jpy_equivalent, 2),
-        new_tax_status=TaxStatus.YES,
+        exchange_rate=payload.exchange_rate,
+        funding_group=payload.funding_group,
+        jpy_equivalent=None,
+        recorded_at=date.today(),
     )
+    return repo.add_tax_settlement(record)
+
+
+def update_tax_settlement(
+    repo: LocalDataRepository,
+    settlement_id: str,
+    payload: TaxSettlementUpdate,
+) -> TaxSettlementRecord:
+    original = repo.get_tax_settlement(settlement_id)
+    transaction = repo.get_transaction(original.transaction_id)
+
+    funding_group = payload.funding_group or original.funding_group
+    if transaction.funding_group != funding_group:
+        raise ValueError("Funding group must match the transaction record")
+
+    group = repo.get_funding_group(funding_group)
+    if group.currency != original.currency:
+        raise ValueError("Tax payment currency must match funding group currency")
+
+    amount = payload.amount or original.amount
+    exchange_rate = payload.exchange_rate
+    if exchange_rate is None and original.exchange_rate is not None:
+        exchange_rate = original.exchange_rate
+
+    updated_record = TaxSettlementRecord(
+        id=original.id,
+        transaction_id=original.transaction_id,
+        amount=amount,
+        currency=original.currency,
+        exchange_rate=exchange_rate,
+        funding_group=funding_group,
+        jpy_equivalent=None,
+        recorded_at=original.recorded_at,
+    )
+    return repo.update_tax_settlement(settlement_id, updated_record)
+
+
+def delete_tax_settlement(
+    repo: LocalDataRepository,
+    settlement_id: str,
+) -> None:
+    record = repo.get_tax_settlement(settlement_id)
+    repo.delete_tax_settlement(settlement_id)
+    repo.mark_transaction_untaxed(record.transaction_id)

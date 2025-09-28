@@ -94,29 +94,50 @@ class TaxSettlementRequest(BaseModel):
     transaction_id: str
     funding_group: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0.0)
-    currency: Currency
+    currency: Currency = Currency.JPY
     exchange_rate: Optional[float] = Field(
         default=None,
         gt=0.0,
-        description="JPY per USD when paying USD taxes in JPY",
+        description="JPY per USD when paying USD taxes",
     )
 
-    @field_validator("exchange_rate", mode="before")
-    def exchange_rate_required_for_usd(
-        cls, value: Optional[float], info: FieldValidationInfo
-    ) -> Optional[float]:
-        currency = info.data.get("currency")
-        if currency == Currency.USD and value is None:
-            raise ValueError("exchange_rate is required when currency is USD")
-        return value
+    @model_validator(mode="after")
+    def validate_currency(self) -> "TaxSettlementRequest":
+        if self.currency == Currency.USD:
+            if self.exchange_rate is None:
+                raise ValueError("exchange_rate is required when currency is USD")
+        else:
+            self.exchange_rate = None
+        return self
 
 
-class TaxSettlementResponse(BaseModel):
+class TaxSettlementRecord(BaseModel):
+    id: str
     transaction_id: str
-    amount_paid: float
+    funding_group: str = Field(..., min_length=1)
+    amount: float = Field(..., gt=0.0)
     currency: Currency
-    jpy_equivalent: float
-    new_tax_status: TaxStatus
+    exchange_rate: Optional[float] = Field(default=None, gt=0.0)
+    jpy_equivalent: Optional[float] = Field(default=None, ge=0.0)
+    recorded_at: date
+
+    @model_validator(mode="after")
+    def normalize_record(self) -> "TaxSettlementRecord":
+        if self.currency == Currency.USD:
+            if self.exchange_rate is None:
+                raise ValueError("exchange_rate is required for USD settlements")
+            jpy_equivalent = self.amount * self.exchange_rate
+        else:
+            jpy_equivalent = self.amount
+            self.exchange_rate = None
+        self.jpy_equivalent = round(jpy_equivalent, 2)
+        return self
+
+
+class TaxSettlementUpdate(BaseModel):
+    amount: Optional[float] = Field(default=None, gt=0.0)
+    funding_group: Optional[str] = Field(default=None, min_length=1)
+    exchange_rate: Optional[float] = Field(default=None, gt=0.0)
 
 
 class HealthResponse(BaseModel):
