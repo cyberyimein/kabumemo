@@ -25,10 +25,10 @@
           </label>
           <label>
             <span>{{ t("funds.fields.currency") }}</span>
-            <select v-model="form.currency" required>
-              <option value="JPY">{{ t("common.currencies.JPY") }}</option>
-              <option value="USD">{{ t("common.currencies.USD") }}</option>
-            </select>
+            <BaseSelect
+              v-model="form.currency"
+              :options="currencyOptions"
+            />
           </label>
           <label>
             <span>{{ t("funds.fields.initial") }}</span>
@@ -135,10 +135,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { FundSnapshot, FundingGroup } from "@/types/api";
+import type { Currency, FundSnapshot, FundingGroup } from "@/types/api";
+import BaseSelect from "./ui/BaseSelect.vue";
 
 const props = defineProps<{
   fundingGroups: FundingGroup[];
@@ -160,6 +161,17 @@ const form = reactive<FundingGroup>({
   initial_amount: 0,
   notes: "",
 });
+
+const currencyOptions = computed(() => [
+  {
+    label: t("common.currencies.JPY"),
+    value: "JPY" as Currency,
+  },
+  {
+    label: t("common.currencies.USD"),
+    value: "USD" as Currency,
+  },
+]);
 
 function resetForm(): void {
   form.name = "";

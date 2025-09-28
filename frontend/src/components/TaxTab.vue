@@ -105,10 +105,10 @@
             </label>
             <label>
               <span>{{ t("tax.fields.currency") }}</span>
-              <select v-model="form.currency" required>
-                <option value="JPY">{{ t("common.currencies.JPY") }}</option>
-                <option value="USD">{{ t("common.currencies.USD") }}</option>
-              </select>
+              <BaseSelect
+                v-model="form.currency"
+                :options="currencyOptions"
+              />
             </label>
             <label v-if="form.currency === 'USD'">
               <span>{{ t("tax.fields.rate") }}</span>
@@ -164,10 +164,12 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type {
+  Currency,
   FundingGroup,
   TaxSettlementRequest,
   Transaction,
 } from "@/types/api";
+import BaseSelect from "./ui/BaseSelect.vue";
 
 const props = defineProps<{
   pendingTransactions: Transaction[];
@@ -261,6 +263,17 @@ const sortedPending = computed(() =>
     a.trade_date < b.trade_date ? 1 : -1
   )
 );
+
+const currencyOptions = computed(() => [
+  {
+    label: t("common.currencies.JPY"),
+    value: "JPY" as Currency,
+  },
+  {
+    label: t("common.currencies.USD"),
+    value: "USD" as Currency,
+  },
+]);
 
 const selectedTransaction = computed(() =>
   props.pendingTransactions.find((item) => item.id === form.transaction_id)

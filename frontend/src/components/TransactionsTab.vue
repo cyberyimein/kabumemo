@@ -90,34 +90,27 @@
           </label>
           <label>
             <span>{{ t("transactions.fields.fundingGroup") }}</span>
-            <select v-model="form.funding_group" required>
-              <option disabled value="">
-                {{ t("transactions.placeholders.fundingGroup") }}
-              </option>
-              <option
-                v-for="group in fundingGroups"
-                :key="group.name"
-                :value="group.name"
-              >
-                {{ group.name }}
-              </option>
-            </select>
+            <BaseSelect
+              v-model="form.funding_group"
+              :options="fundingGroupOptions"
+              :placeholder="t('transactions.placeholders.fundingGroup')"
+              :empty-label="t('common.states.none')"
+            />
           </label>
           <label>
             <span>{{ t("transactions.fields.cashCurrency") }}</span>
-            <select v-model="form.cash_currency" required>
-              <option value="JPY">{{ t("common.currencies.JPY") }}</option>
-              <option value="USD" :disabled="form.market === 'JP'">
-                {{ t("common.currencies.USD") }}
-              </option>
-            </select>
+            <BaseSelect
+              v-model="form.cash_currency"
+              :options="cashCurrencyOptions"
+            />
           </label>
           <label>
             <span>{{ t("transactions.fields.taxed") }}</span>
-            <select v-model="form.taxed" :disabled="tradeType === 'buy'" required>
-              <option value="Y">{{ t("transactions.taxOptions.Y") }}</option>
-              <option value="N">{{ t("transactions.taxOptions.N") }}</option>
-            </select>
+            <BaseSelect
+              v-model="form.taxed"
+              :options="taxOptions"
+              :disabled="tradeType === 'buy'"
+            />
           </label>
           <label class="full">
             <span>{{ t("transactions.fields.memo") }}</span>
@@ -135,7 +128,7 @@
         </div>
       </form>
 
-    <div class="surface">
+      <div class="surface">
         <h3>{{ t("transactions.historyTitle", { count: transactions.length }) }}</h3>
         <div class="table-scroll">
           <table>
@@ -199,7 +192,13 @@
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { FundingGroup, Transaction, TransactionCreate } from "@/types/api";
+import type {
+  FundingGroup,
+  TaxStatus,
+  Transaction,
+  TransactionCreate,
+} from "@/types/api";
+import BaseSelect from "./ui/BaseSelect.vue";
 
 const props = defineProps<{
   transactions: Transaction[];
@@ -217,9 +216,39 @@ const { t } = useI18n();
 const pending = ref(false);
 const tradeType = ref<"buy" | "sell">("buy");
 
-const form = reactive<TransactionCreate & { memo?: string | null }>(
-  resetForm()
+type TransactionForm = TransactionCreate & { taxed: TaxStatus; memo?: string | null };
+
+const form = reactive<TransactionForm>(resetForm());
+
+const fundingGroupOptions = computed(() =>
+  props.fundingGroups.map((group) => ({
+    label: group.name,
+    value: group.name,
+  }))
 );
+
+const cashCurrencyOptions = computed(() => [
+  {
+    label: t("common.currencies.JPY"),
+    value: "JPY",
+  },
+  {
+    label: t("common.currencies.USD"),
+    value: "USD",
+    disabled: form.market === "JP",
+  },
+]);
+
+const taxOptions = computed(() => [
+  {
+    label: t("transactions.taxOptions.Y"),
+    value: "Y",
+  },
+  {
+    label: t("transactions.taxOptions.N"),
+    value: "N",
+  },
+]);
 
 watch(
   () => form.quantity,
@@ -273,7 +302,7 @@ const sortedTransactions = computed(() =>
   [...props.transactions].sort((a, b) => (a.trade_date < b.trade_date ? 1 : -1))
 );
 
-function resetForm(): TransactionCreate & { memo?: string | null } {
+function resetForm(): TransactionForm {
   return {
     trade_date: new Date().toISOString().slice(0, 10),
     symbol: "",
@@ -450,6 +479,7 @@ function setMarket(type: "JP" | "US") {
   text-transform: uppercase;
   color: var(--text-faint);
 }
+
 
 
 .toggle-row {

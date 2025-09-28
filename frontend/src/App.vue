@@ -10,6 +10,19 @@
           <span class="status-dot"></span>
           <span>{{ healthStatus.label }}</span>
         </div>
+        <transition name="notification-pop">
+          <div
+            v-if="notification"
+            class="notification toast-inline"
+            :class="notification.type"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <strong>{{ t(`app.notifications.${notification.type}`) }}：</strong>
+            <span>{{ notification.message }}</span>
+          </div>
+        </transition>
         <div
           class="language-toggle"
           role="group"
@@ -29,15 +42,6 @@
         </div>
       </div>
     </header>
-
-    <section
-      v-if="notification"
-      class="notification"
-      :class="notification.type"
-    >
-      <strong>{{ t(`app.notifications.${notification.type}`) }}：</strong>
-      <span>{{ notification.message }}</span>
-    </section>
 
     <section v-if="loading" class="loading-state">
       <div class="spinner" aria-hidden="true"></div>
