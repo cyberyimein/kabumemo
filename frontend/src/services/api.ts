@@ -1,5 +1,6 @@
 import type {
   FundSnapshot,
+  FundSnapshotsResponse,
   FundingGroup,
   FundingGroupUpdate,
   HealthResponse,
@@ -91,8 +92,8 @@ export function getPositions(): Promise<Position[]> {
 }
 
 // Funds --------------------------------------------------------------------------
-export function getFunds(): Promise<FundSnapshot[]> {
-  return request<FundSnapshot[]>("/funds");
+export function getFunds(): Promise<FundSnapshotsResponse> {
+  return request<FundSnapshotsResponse>("/funds");
 }
 
 // Funding groups -----------------------------------------------------------------

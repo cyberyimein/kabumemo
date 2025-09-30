@@ -6,11 +6,14 @@ from typing import Iterable
 from uuid import uuid4
 
 from ..models.schemas import (
+    AggregatedFundSnapshot,
     Currency,
     FundSnapshot,
+    FundSnapshots,
     FundingGroup,
     Market,
     Position,
+    PositionBreakdown,
     TaxSettlementRecord,
     TaxSettlementRequest,
     TaxSettlementUpdate,
@@ -21,9 +24,11 @@ from ..storage.repository import LocalDataRepository
 
 
 def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
-    inventory: dict[str, dict[str, float]] = {}
+    inventory: dict[str, dict[Currency, dict[str, float]]] = defaultdict(
+        lambda: defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
+    )
     markets: dict[str, Market] = {}
-    realized: defaultdict[str, float] = defaultdict(float)
+    realized: dict[str, defaultdict[Currency, float]] = {}
     sorted_transactions = [
         tx
         for _, tx in sorted(
@@ -33,14 +38,12 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
     ]
 
     for tx in sorted_transactions:
-        record = inventory.setdefault(
-            tx.symbol,
-            {
-                "quantity": 0.0,
-                "total_cost": 0.0,
-            },
-        )
-        markets[tx.symbol] = tx.market
+        symbol = tx.symbol
+        currency = tx.cash_currency
+        record = inventory[symbol][currency]
+        markets[symbol] = tx.market
+        currency_realized = realized.setdefault(symbol, defaultdict(float))
+
         current_qty = record["quantity"]
         total_cost = record["total_cost"]
 
@@ -48,44 +51,58 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
             new_qty = current_qty + tx.quantity
             new_cost = total_cost + tx.gross_amount
         else:
+            if current_qty <= 0:
+                # No inventory to offset this sale; skip to avoid division by zero
+                continue
+
             sell_qty = min(-tx.quantity, current_qty)
             avg_cost = total_cost / current_qty if current_qty else 0.0
             realized_profit = tx.gross_amount - avg_cost * sell_qty
-            realized[tx.symbol] += realized_profit
+            currency_realized[currency] += realized_profit
             new_qty = current_qty + tx.quantity
             new_cost = total_cost + avg_cost * tx.quantity
             if new_qty <= 1e-9:
                 new_qty = 0.0
                 new_cost = 0.0
+
         record["quantity"] = new_qty
         record["total_cost"] = max(new_cost, 0.0)
 
     positions: list[Position] = []
-    for symbol, record in inventory.items():
-        qty = record["quantity"]
-        total_cost = record["total_cost"]
-        avg_cost = total_cost / qty if qty else 0.0
+    for symbol, currency_records in inventory.items():
+        breakdown: list[PositionBreakdown] = []
+        currency_realized = realized.get(symbol, defaultdict(float))
+        for currency, record in currency_records.items():
+            qty = record["quantity"]
+            total_cost = record["total_cost"]
+            avg_cost = total_cost / qty if qty else 0.0
+            breakdown.append(
+                PositionBreakdown(
+                    currency=currency,
+                    quantity=round(qty, 4),
+                    average_cost=round(avg_cost, 4),
+                    realized_pl=round(currency_realized[currency], 2),
+                )
+            )
+
+        # Ensure stable ordering by currency value
+        breakdown.sort(key=lambda item: item.currency.value)
+
         positions.append(
             Position(
                 symbol=symbol,
-                quantity=round(qty, 4),
-                average_cost=round(avg_cost, 4),
-                realized_pl=round(realized[symbol], 2),
                 market=markets[symbol],
+                breakdown=breakdown,
             )
         )
     return positions
-
 
 def compute_fund_snapshots(
     transactions: Iterable[Transaction],
     funding_groups: Iterable[FundingGroup],
     tax_settlements: Iterable[TaxSettlementRecord] | None = None,
-) -> list[FundSnapshot]:
+) -> FundSnapshots:
     group_lookup = {group.name: group for group in funding_groups}
-    cash_flows: defaultdict[str, float] = defaultdict(float)
-    inventories: dict[str, dict[str, dict[str, float]]] = {}
-
     sorted_transactions = [
         tx
         for _, tx in sorted(
@@ -93,66 +110,162 @@ def compute_fund_snapshots(
             key=lambda pair: (pair[1].trade_date, pair[0]),
         )
     ]
+    settlements = list(tax_settlements or [])
 
-    for tx in sorted_transactions:
-        amount = tx.gross_amount
-        if tx.quantity > 0:
-            cash_flows[tx.funding_group] -= amount
-        else:
-            cash_flows[tx.funding_group] += amount
+    today = date.today()
+    last_year_end = date(today.year - 1, 12, 31)
+    prev_year_end = date(today.year - 2, 12, 31)
 
-        group_inventory = inventories.setdefault(tx.funding_group, {})
-        record = group_inventory.setdefault(
-            tx.symbol,
-            {
-                "quantity": 0.0,
-                "total_cost": 0.0,
-            },
-        )
-        current_qty = record["quantity"]
-        total_cost = record["total_cost"]
+    def calculate_state(until: date | None) -> dict[str, dict[str, float]]:
+        cash_flows: defaultdict[str, float] = defaultdict(float)
+        inventories: dict[str, dict[str, dict[str, float]]] = {}
 
-        if tx.quantity > 0:
-            record["quantity"] = current_qty + tx.quantity
-            record["total_cost"] = total_cost + amount
-        else:
-            sell_qty = min(-tx.quantity, current_qty)
-            if current_qty <= 0:
+        for tx in sorted_transactions:
+            if until and tx.trade_date > until:
                 continue
-            avg_cost = total_cost / current_qty if current_qty else 0.0
-            cost_reduction = avg_cost * sell_qty
-            new_qty = current_qty + tx.quantity
-            new_cost = total_cost - cost_reduction
-            if new_qty <= 1e-9:
-                new_qty = 0.0
-                new_cost = 0.0
-            record["quantity"] = new_qty
-            record["total_cost"] = max(new_cost, 0.0)
+            amount = tx.gross_amount
+            if tx.quantity > 0:
+                cash_flows[tx.funding_group] -= amount
+            else:
+                cash_flows[tx.funding_group] += amount
 
-    if tax_settlements:
-        for entry in tax_settlements:
-            cash_flows[entry.funding_group] -= entry.amount
+            group_inventory = inventories.setdefault(tx.funding_group, {})
+            record = group_inventory.setdefault(
+                tx.symbol,
+                {
+                    "quantity": 0.0,
+                    "total_cost": 0.0,
+                },
+            )
+            current_qty = record["quantity"]
+            total_cost = record["total_cost"]
+
+            if tx.quantity > 0:
+                record["quantity"] = current_qty + tx.quantity
+                record["total_cost"] = total_cost + amount
+            else:
+                sell_qty = min(-tx.quantity, current_qty)
+                if current_qty <= 0:
+                    continue
+                avg_cost = total_cost / current_qty if current_qty else 0.0
+                cost_reduction = avg_cost * sell_qty
+                new_qty = current_qty + tx.quantity
+                new_cost = total_cost - cost_reduction
+                if new_qty <= 1e-9:
+                    new_qty = 0.0
+                    new_cost = 0.0
+                record["quantity"] = new_qty
+                record["total_cost"] = max(new_cost, 0.0)
+
+        if settlements:
+            for entry in settlements:
+                if until and entry.recorded_at > until:
+                    continue
+                cash_flows[entry.funding_group] -= entry.amount
+
+        state: dict[str, dict[str, float]] = {}
+        for name, group in group_lookup.items():
+            delta = cash_flows.get(name, 0.0)
+            cash_balance = group.initial_amount + delta
+            holdings = inventories.get(name, {})
+            holding_cost = sum(record["total_cost"] for record in holdings.values())
+            current_total = cash_balance + holding_cost
+            state[name] = {
+                "cash_balance": cash_balance,
+                "holding_cost": holding_cost,
+                "current_total": current_total,
+            }
+        return state
+
+    final_state = calculate_state(None)
+    last_year_state = calculate_state(last_year_end)
+    prev_year_state = calculate_state(prev_year_end)
+
+    def safe_ratio(numerator: float, denominator: float) -> float | None:
+        return round(numerator / denominator, 6) if abs(denominator) > 1e-9 else None
 
     snapshots: list[FundSnapshot] = []
     for name, group in group_lookup.items():
-        delta = cash_flows.get(name, 0.0)
-        cash_balance = group.initial_amount + delta
-        holdings = inventories.get(name, {})
-        holding_cost = sum(record["total_cost"] for record in holdings.values())
-        current_total = cash_balance + holding_cost
-        total_pl = current_total - group.initial_amount
+        final_metrics = final_state[name]
+        last_year_metrics = last_year_state[name]
+        prev_year_metrics = prev_year_state[name]
+
+        current_year_pl = final_metrics["current_total"] - last_year_metrics["current_total"]
+        previous_year_pl = last_year_metrics["current_total"] - prev_year_metrics["current_total"]
+        current_year_ratio = safe_ratio(current_year_pl, last_year_metrics["current_total"])
+        previous_year_ratio = safe_ratio(previous_year_pl, prev_year_metrics["current_total"])
+
+        total_pl = final_metrics["current_total"] - group.initial_amount
+
         snapshots.append(
             FundSnapshot(
                 name=name,
                 currency=group.currency,
-                initial_amount=group.initial_amount,
-                cash_balance=round(cash_balance, 2),
-                holding_cost=round(holding_cost, 2),
-                current_total=round(current_total, 2),
+                initial_amount=round(group.initial_amount, 2),
+                cash_balance=round(final_metrics["cash_balance"], 2),
+                holding_cost=round(final_metrics["holding_cost"], 2),
+                current_total=round(final_metrics["current_total"], 2),
                 total_pl=round(total_pl, 2),
+                current_year_pl=round(current_year_pl, 2),
+                current_year_pl_ratio=current_year_ratio,
+                previous_year_pl=round(previous_year_pl, 2),
+                previous_year_pl_ratio=previous_year_ratio,
             )
         )
-    return snapshots
+
+    # Aggregate snapshots by currency
+    aggregates: dict[Currency, dict[str, float]] = {
+        currency: {
+            "initial_amount": 0.0,
+            "cash_balance": 0.0,
+            "holding_cost": 0.0,
+            "current_total": 0.0,
+            "total_pl": 0.0,
+            "current_year_pl": 0.0,
+            "previous_year_pl": 0.0,
+            "baseline_current": 0.0,
+            "baseline_previous": 0.0,
+        }
+        for currency in Currency
+    }
+    group_counts: dict[Currency, int] = {currency: 0 for currency in Currency}
+
+    for snapshot in snapshots:
+        bucket = aggregates[snapshot.currency]
+        group_counts[snapshot.currency] += 1
+        bucket["initial_amount"] += snapshot.initial_amount
+        bucket["cash_balance"] += snapshot.cash_balance
+        bucket["holding_cost"] += snapshot.holding_cost
+        bucket["current_total"] += snapshot.current_total
+        bucket["total_pl"] += snapshot.total_pl
+        bucket["current_year_pl"] += snapshot.current_year_pl
+        bucket["previous_year_pl"] += snapshot.previous_year_pl
+        bucket["baseline_current"] += last_year_state[snapshot.name]["current_total"]
+        bucket["baseline_previous"] += prev_year_state[snapshot.name]["current_total"]
+
+    aggregated_snapshots: list[AggregatedFundSnapshot] = []
+    for currency, bucket in aggregates.items():
+        if group_counts[currency] == 0:
+            continue
+        current_ratio = safe_ratio(bucket["current_year_pl"], bucket["baseline_current"])
+        previous_ratio = safe_ratio(bucket["previous_year_pl"], bucket["baseline_previous"])
+        aggregated_snapshots.append(
+            AggregatedFundSnapshot(
+                currency=currency,
+                group_count=group_counts[currency],
+                initial_amount=round(bucket["initial_amount"], 2),
+                cash_balance=round(bucket["cash_balance"], 2),
+                holding_cost=round(bucket["holding_cost"], 2),
+                current_total=round(bucket["current_total"], 2),
+                total_pl=round(bucket["total_pl"], 2),
+                current_year_pl=round(bucket["current_year_pl"], 2),
+                current_year_pl_ratio=current_ratio,
+                previous_year_pl=round(bucket["previous_year_pl"], 2),
+                previous_year_pl_ratio=previous_ratio,
+            )
+        )
+
+    return FundSnapshots(funds=snapshots, aggregated=aggregated_snapshots)
 
 
 def record_tax_settlement(

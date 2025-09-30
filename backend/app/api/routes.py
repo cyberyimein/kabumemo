@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..models.schemas import (
-    FundSnapshot,
+    FundSnapshots,
     FundingGroup,
     FundingGroupUpdate,
     HealthResponse,
@@ -57,7 +57,9 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
         available_quantity = sum(
             tx.quantity
             for tx in transactions
-            if tx.symbol == payload.symbol and tx.market == payload.market
+            if tx.symbol == payload.symbol
+            and tx.market == payload.market
+            and tx.cash_currency == payload.cash_currency
         )
         if available_quantity + payload.quantity < -1e-9:
             raise HTTPException(
@@ -91,7 +93,9 @@ def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Trans
         available_quantity = sum(
             tx.quantity
             for tx in filtered_transactions
-            if tx.symbol == payload.symbol and tx.market == payload.market
+            if tx.symbol == payload.symbol
+            and tx.market == payload.market
+            and tx.cash_currency == payload.cash_currency
         )
         if available_quantity + payload.quantity < -1e-9:
             raise HTTPException(
@@ -129,8 +133,8 @@ def get_positions() -> list[Position]:
     return compute_positions(transactions)
 
 
-@router.get("/funds", response_model=list[FundSnapshot])
-def get_funds() -> list[FundSnapshot]:
+@router.get("/funds", response_model=FundSnapshots)
+def get_funds() -> FundSnapshots:
     transactions = repository.list_transactions()
     groups = repository.list_funding_groups()
     settlements = repository.list_tax_settlements()

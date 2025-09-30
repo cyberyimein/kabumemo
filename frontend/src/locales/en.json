@@ -164,9 +164,28 @@
       "cash": "Cash Balance",
       "holdingCost": "Holding Cost",
       "current": "Current Total",
-      "pl": "Total P&L"
+      "pl": "Total P&L",
+      "currentYearPl": "YTD Realized P&L",
+      "currentYearRatio": "YTD Return",
+      "previousYearPl": "Prior Year Realized P&L",
+      "previousYearRatio": "Prior Year Return"
     },
     "emptySnapshot": "No fund snapshots",
+    "aggregateTitle": "Aggregate Overview",
+    "aggregateTable": {
+      "currency": "Currency",
+      "groups": "Groups",
+      "initial": "Initial Amount",
+      "cash": "Cash Balance",
+      "holdingCost": "Holding Cost",
+      "current": "Current Total",
+      "totalPl": "Total P&L",
+      "currentYearPl": "YTD Realized P&L",
+      "currentYearRatio": "YTD Return",
+      "previousYearPl": "Prior Year Realized P&L",
+      "previousYearRatio": "Prior Year Return"
+    },
+    "emptyAggregate": "No aggregate data",
     "confirm": {
       "mustKeepOne": "Keep at least one funding group.",
       "delete": "Delete funding group {name}?"

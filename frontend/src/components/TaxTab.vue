@@ -19,9 +19,9 @@
               <tr>
                 <th>{{ t("tax.table.date") }}</th>
                 <th>{{ t("tax.table.symbol") }}</th>
-                <th>{{ t("tax.table.quantity") }}</th>
+                <th class="numeric">{{ t("tax.table.quantity") }}</th>
                 <th>{{ t("tax.table.fundingGroup") }}</th>
-                <th>{{ t("tax.table.amount") }}</th>
+                <th class="numeric">{{ t("tax.table.amount") }}</th>
                 <th>{{ t("tax.table.actions") }}</th>
               </tr>
             </thead>
@@ -32,9 +32,9 @@
               <tr v-for="item in sortedPending" :key="item.id">
                 <td>{{ item.trade_date }}</td>
                 <td>{{ item.symbol }}</td>
-                <td class="negative">{{ formatNumber(item.quantity) }}</td>
+                <td class="numeric negative">{{ formatNumber(item.quantity) }}</td>
                 <td>{{ item.funding_group }}</td>
-                <td>
+                <td class="numeric">
                   {{ formatCurrency(item.gross_amount, item.cash_currency) }}
                 </td>
                 <td>
@@ -176,8 +176,8 @@
                 <th>{{ t("tax.historyTable.recordedAt") }}</th>
                 <th>{{ t("tax.historyTable.tradeDate") }}</th>
                 <th>{{ t("tax.historyTable.symbol") }}</th>
-                <th>{{ t("tax.historyTable.amount") }}</th>
-                <th>{{ t("tax.historyTable.converted") }}</th>
+                <th class="numeric">{{ t("tax.historyTable.amount") }}</th>
+                <th class="numeric">{{ t("tax.historyTable.converted") }}</th>
                 <th>{{ t("tax.historyTable.fundingGroup") }}</th>
                 <th>{{ t("tax.historyTable.actions") }}</th>
               </tr>
@@ -194,8 +194,8 @@
                 <td>{{ formatDate(row.record.recorded_at) }}</td>
                 <td>{{ row.transaction?.trade_date ?? "—" }}</td>
                 <td>{{ row.transaction?.symbol ?? row.record.transaction_id }}</td>
-                <td>{{ formatCurrency(row.record.amount, row.record.currency) }}</td>
-                <td>{{ formatCurrency(row.record.jpy_equivalent, "JPY") }}</td>
+                <td class="numeric">{{ formatCurrency(row.record.amount, row.record.currency) }}</td>
+                <td class="numeric">{{ formatCurrency(row.record.jpy_equivalent, "JPY") }}</td>
                 <td>{{ row.record.funding_group }}</td>
                 <td class="actions-cell">
                   <button
@@ -381,6 +381,7 @@ const manualUsdAmount = computed(() => {
   return Number(numeric.toFixed(2));
 });
 
+// 两个转换来源（手动填写或根据汇率自动换算）择优使用，确保提交时有明确的美元金额。
 const effectiveUsdAmount = computed(() => {
   if (form.currency !== "USD") {
     return null;
@@ -530,10 +531,17 @@ function formatNumber(value: number): string {
 }
 
 function formatCurrency(value: number, currency: string): string {
-  return new Intl.NumberFormat(currency === "USD" ? "en-US" : "ja-JP", {
+  const formatted = new Intl.NumberFormat(currency === "USD" ? "en-US" : "ja-JP", {
     style: "currency",
     currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
+
+  if (currency === "JPY") {
+    return formatted.replace("￥", "¥");
+  }
+  return formatted;
 }
 
 function formatDate(value: string): string {
@@ -710,6 +718,20 @@ async function handleSubmit() {
   border-bottom: 1px solid var(--divider);
   font-size: 0.95rem;
   color: var(--text);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
 }
 
 .table-scroll tbody tr:hover {

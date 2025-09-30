@@ -164,9 +164,28 @@
       "cash": "现金余额",
       "holdingCost": "持仓成本",
       "current": "当前总额",
-      "pl": "总盈亏"
+      "pl": "总盈亏",
+      "currentYearPl": "今年落地盈亏",
+      "currentYearRatio": "今年收益率",
+      "previousYearPl": "去年落地盈亏",
+      "previousYearRatio": "去年收益率"
     },
     "emptySnapshot": "暂无资金快照",
+    "aggregateTitle": "资金合并概览",
+    "aggregateTable": {
+      "currency": "货币",
+      "groups": "包含资金组数",
+      "initial": "初始资金",
+      "cash": "现金余额",
+      "holdingCost": "持仓成本",
+      "current": "当前总额",
+      "totalPl": "总盈亏",
+      "currentYearPl": "今年落地盈亏",
+      "currentYearRatio": "今年收益率",
+      "previousYearPl": "去年落地盈亏",
+      "previousYearRatio": "去年收益率"
+    },
+    "emptyAggregate": "暂无可合并的资金数据",
     "confirm": {
       "mustKeepOne": "至少保留一个资金组。",
       "delete": "确定删除资金组 {name} 吗？"

@@ -37,12 +37,17 @@ export interface Transaction extends TransactionBase {
   id: string;
 }
 
-export interface Position {
-  symbol: string;
+export interface PositionBreakdown {
+  currency: Currency;
   quantity: number;
   average_cost: number;
   realized_pl: number;
+}
+
+export interface Position {
+  symbol: string;
   market: Market;
+  breakdown: PositionBreakdown[];
 }
 
 export interface FundSnapshot {
@@ -53,6 +58,29 @@ export interface FundSnapshot {
   holding_cost: number;
   current_total: number;
   total_pl: number;
+  current_year_pl: number;
+  current_year_pl_ratio: number | null;
+  previous_year_pl: number;
+  previous_year_pl_ratio: number | null;
+}
+
+export interface AggregatedFundSnapshot {
+  currency: Currency;
+  group_count: number;
+  initial_amount: number;
+  cash_balance: number;
+  holding_cost: number;
+  current_total: number;
+  total_pl: number;
+  current_year_pl: number;
+  current_year_pl_ratio: number | null;
+  previous_year_pl: number;
+  previous_year_pl_ratio: number | null;
+}
+
+export interface FundSnapshotsResponse {
+  funds: FundSnapshot[];
+  aggregated: AggregatedFundSnapshot[];
 }
 
 export interface TaxSettlementRequest {

@@ -158,8 +158,8 @@
               <tr>
                 <th>{{ t("transactions.table.date") }}</th>
                 <th>{{ t("transactions.table.symbol") }}</th>
-                <th>{{ t("transactions.table.quantity") }}</th>
-                <th>{{ t("transactions.table.amount") }}</th>
+                <th class="numeric">{{ t("transactions.table.quantity") }}</th>
+                <th class="numeric">{{ t("transactions.table.amount") }}</th>
                 <th>{{ t("transactions.table.fundingGroup") }}</th>
                 <th>{{ t("transactions.table.currency") }}</th>
                 <th>{{ t("transactions.table.market") }}</th>
@@ -182,10 +182,10 @@
               >
                 <td>{{ tx.trade_date }}</td>
                 <td>{{ tx.symbol }}</td>
-                <td :class="{ negative: tx.quantity < 0, positive: tx.quantity > 0 }">
+                <td :class="['numeric', { negative: tx.quantity < 0, positive: tx.quantity > 0 }]">
                   {{ formatNumber(tx.quantity) }}
                 </td>
-                <td>{{ formatCurrency(tx.gross_amount, tx.cash_currency) }}</td>
+                <td class="numeric">{{ formatCurrency(tx.gross_amount, tx.cash_currency) }}</td>
                 <td>{{ tx.funding_group }}</td>
                 <td>{{ tx.cash_currency }}</td>
                 <td>{{ marketLabel(tx.market) }}</td>
@@ -385,10 +385,17 @@ function formatNumber(value: number): string {
 
 function formatCurrency(value: number, currency: string): string {
   const locale = currency === "USD" ? "en-US" : "ja-JP";
-  return new Intl.NumberFormat(locale, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
+
+  if (currency === "JPY") {
+    return formatted.replace("￥", "¥");
+  }
+  return formatted;
 }
 
 function marketLabel(value: string): string {
@@ -803,6 +810,13 @@ function setMarket(type: "JP" | "US") {
   border-bottom: 1px solid var(--divider);
   font-size: 0.95rem;
   color: var(--text);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
 }
 
 .table-scroll tbody tr:hover {

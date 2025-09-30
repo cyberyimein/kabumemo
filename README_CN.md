@@ -94,8 +94,8 @@ npm run lint    # 可选：运行 ESLint
 | POST   | `/api/transactions`                    | 新增交易，自动生成 UUID 并执行仓位校验       |
 | PUT    | `/api/transactions/{transaction_id}`   | 更新指定交易，持续校验资金组与持仓余额       |
 | DELETE | `/api/transactions/{transaction_id}`   | 删除指定交易，同时清理关联纳税记录           |
-| GET    | `/api/positions`                       | 根据交易计算仓位与已实现盈亏                 |
-| GET    | `/api/funds`                           | 输出资金组快照（初始资金、当前总额、收益）   |
+| GET    | `/api/positions`                       | 根据交易计算仓位（含多币种拆分）与已实现盈亏 |
+| GET    | `/api/funds`                           | 输出资金快照与通货汇总（含年度收益指标）     |
 | GET    | `/api/funding-groups`                  | 列出资金组，首次启动自动创建 Default JPY/USD |
 | POST   | `/api/funding-groups`                  | 新增/覆盖资金组                              |
 | PATCH  | `/api/funding-groups/{name}`           | 更新资金组的货币、初始资金或备注             |
@@ -107,6 +107,8 @@ npm run lint    # 可选：运行 ESLint
 
 所有接口均返回 JSON，错误响应统一包含 `detail` 字段。后端依靠 `tests/test_api.py` 覆盖交易买卖、纳税与删除等关键流程。
 
+`GET /api/funds` 返回的对象包含两个字段：`funds`（每个资金组的快照）与 `aggregated`（按货币汇总的总览，包含当年/上一年收益率等指标），前端会同步展示两张表格。
+
 ## 前端功能概览
 
 前端以 Tab 形式呈现主要功能：
@@ -115,9 +117,10 @@ npm run lint    # 可选：运行 ESLint
   - 新建或编辑买入/卖出交易，数量自动规范化，税务状态给出默认值，编辑时会显示可取消/保存的提示。
   - 行点击可回填表单；操作列提供编辑与删除按钮，均带二次确认以避免误操作。
   - 支持刷新按钮同步后端最新数据。
-- **持仓表 (Positions)**：基于交易列表实时计算持仓数量、平均成本和已实现盈亏。
+- **持仓表 (Positions)**：基于交易列表实时计算持仓数量、平均成本和已实现盈亏，并按币种拆分展示明细。
 - **资金表 (Funds & Groups)**
-  - 管理资金组（新增、修改、删除）并展示资金快照。
+  - 管理资金组（新增、修改、删除）并展示包含年度对比指标的资金快照。
+  - 新增「通货汇总」视图，可快速对比不同货币下的总体资金、持仓成本与盈亏表现。
   - 删除时会检查至少保留一个资金组，文案已国际化。
 - **纳税 (Tax)**
   - 自动筛选未纳税的卖出交易。

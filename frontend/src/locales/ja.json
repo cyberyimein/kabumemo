@@ -164,9 +164,28 @@
       "cash": "現金残高",
       "holdingCost": "保有コスト",
       "current": "現在総額",
-      "pl": "累計損益"
+      "pl": "累計損益",
+      "currentYearPl": "当期実現損益",
+      "currentYearRatio": "当期利回り",
+      "previousYearPl": "前期実現損益",
+      "previousYearRatio": "前期利回り"
     },
     "emptySnapshot": "資金スナップショットがありません",
+    "aggregateTitle": "通貨別サマリー",
+    "aggregateTable": {
+      "currency": "通貨",
+      "groups": "グループ数",
+      "initial": "初期資金",
+      "cash": "現金残高",
+      "holdingCost": "保有コスト",
+      "current": "現在総額",
+      "totalPl": "累計損益",
+      "currentYearPl": "当期実現損益",
+      "currentYearRatio": "当期利回り",
+      "previousYearPl": "前期実現損益",
+      "previousYearRatio": "前期利回り"
+    },
+    "emptyAggregate": "サマリー表示できるデータがありません",
     "confirm": {
       "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
       "delete": "資金グループ {name} を削除しますか？"

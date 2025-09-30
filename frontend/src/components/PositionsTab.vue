@@ -19,9 +19,9 @@
               <tr>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th>{{ t("positions.table.market") }}</th>
-                <th>{{ t("positions.table.quantity") }}</th>
-                <th>{{ t("positions.table.cost") }}</th>
-                <th>{{ t("positions.table.pl") }}</th>
+                <th class="numeric">{{ t("positions.table.quantity") }}</th>
+                <th class="numeric">{{ t("positions.table.cost") }}</th>
+                <th class="numeric">{{ t("positions.table.pl") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -31,10 +31,10 @@
               <tr v-for="item in activePositions" :key="`${item.symbol}-${item.market}`">
                 <td>{{ item.symbol }}</td>
                 <td>{{ marketLabel(item.market) }}</td>
-                <td>{{ formatNumber(item.quantity) }}</td>
-                <td>{{ formatCurrency(item.average_cost, item.market) }}</td>
-                <td :class="profitClass(item.realized_pl)">
-                  {{ formatProfit(item.realized_pl, item.market) }}
+                <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
+                <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
+                <td :class="['numeric', profitClass(item.breakdown)]">
+                  {{ formatProfitBreakdown(item.breakdown) }}
                 </td>
               </tr>
             </tbody>
@@ -50,8 +50,8 @@
               <tr>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th>{{ t("positions.table.market") }}</th>
-                <th>{{ t("positions.table.quantity") }}</th>
-                <th>{{ t("positions.table.pl") }}</th>
+                <th class="numeric">{{ t("positions.table.quantity") }}</th>
+                <th class="numeric">{{ t("positions.table.pl") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -61,9 +61,9 @@
               <tr v-for="item in closedPositions" :key="`${item.symbol}-${item.market}`">
                 <td>{{ item.symbol }}</td>
                 <td>{{ marketLabel(item.market) }}</td>
-                <td>{{ formatNumber(item.quantity) }}</td>
-                <td :class="profitClass(item.realized_pl)">
-                  {{ formatProfit(item.realized_pl, item.market) }}
+                <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
+                <td :class="['numeric', profitClass(item.breakdown)]">
+                  {{ formatProfitBreakdown(item.breakdown) }}
                 </td>
               </tr>
             </tbody>
@@ -78,7 +78,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { Position } from "@/types/api";
+import type { Position, PositionBreakdown } from "@/types/api";
 
 const props = defineProps<{ positions: Position[] }>();
 
@@ -88,13 +88,13 @@ defineEmits<{
 
 const { t } = useI18n();
 
-const activePositions = computed(() =>
-  props.positions.filter((item) => Math.abs(item.quantity) > 1e-9)
-);
+function hasOpenQuantity(position: Position): boolean {
+  return position.breakdown.some((entry) => Math.abs(entry.quantity) > 1e-9);
+}
 
-const closedPositions = computed(() =>
-  props.positions.filter((item) => Math.abs(item.quantity) <= 1e-9)
-);
+const activePositions = computed(() => props.positions.filter(hasOpenQuantity));
+
+const closedPositions = computed(() => props.positions.filter((item) => !hasOpenQuantity(item)));
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
@@ -103,31 +103,72 @@ function formatNumber(value: number): string {
   }).format(value);
 }
 
-function marketToCurrency(market: string): "JPY" | "USD" {
-  return market === "US" ? "USD" : "JPY";
+function currencySymbol(currency: "JPY" | "USD"): string {
+  return currency === "USD" ? "$" : "¥";
 }
 
-function formatCurrency(value: number, market: string): string {
-  const currency = marketToCurrency(market);
+function formatCurrencyValue(value: number, currency: "JPY" | "USD"): string {
   const locale = currency === "USD" ? "en-US" : "ja-JP";
-  return new Intl.NumberFormat(locale, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
+
+  if (currency === "JPY") {
+    return formatted.replace("￥", "¥");
+  }
+  return formatted;
 }
 
-function formatProfit(value: number, market: string): string {
-  const formatter = new Intl.NumberFormat(market === "US" ? "en-US" : "ja-JP", {
-    style: "currency",
-    currency: market === "US" ? "USD" : "JPY",
-  });
-  return formatter.format(value);
+function formatQuantityBreakdown(breakdown: PositionBreakdown[]): string {
+  if (!breakdown.length) {
+    return "-";
+  }
+
+  // 格式化每个币种的仓位数量，保持零仓位时也至少展示一项，便于核对双币种持仓。
+  const formatted = breakdown
+    .map((entry) => ({
+      absolute: Math.abs(entry.quantity),
+      display: `${formatNumber(entry.quantity)}${currencySymbol(entry.currency)}`,
+    }))
+    .filter(
+      (entry, _, array) => entry.absolute > 1e-9 || array.every((item) => item.absolute <= 1e-9)
+    );
+
+  return formatted.map((entry) => entry.display).join(" / ");
 }
 
-function profitClass(value: number): Record<string, boolean> {
+function formatAverageCostBreakdown(breakdown: PositionBreakdown[]): string {
+  if (!breakdown.length) {
+    return "-";
+  }
+
+  // 将平均成本以本币显示并拼接，帮助用户快速比较多币种成本。
+  return breakdown
+    .map((entry) => formatCurrencyValue(entry.average_cost, entry.currency))
+    .join(" / ");
+}
+
+function formatProfitBreakdown(breakdown: PositionBreakdown[]): string {
+  if (!breakdown.length) {
+    return "-";
+  }
+
+  // 同步展示各币种的已实现盈亏，保持和平均成本相同的输出顺序。
+  return breakdown
+    .map((entry) => formatCurrencyValue(entry.realized_pl, entry.currency))
+    .join(" / ");
+}
+
+function profitClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
+  const positive = breakdown.some((entry) => entry.realized_pl > 1e-2);
+  const negative = breakdown.some((entry) => entry.realized_pl < -1e-2);
   return {
-    positive: value >= 0,
-    negative: value < 0,
+    positive: positive && !negative,
+    negative: negative && !positive,
+    mixed: positive && negative,
   };
 }
 
@@ -165,6 +206,18 @@ function marketLabel(value: string): string {
   z-index: 1;
 }
 
+.surface-group {
+  display: grid;
+  gap: clamp(1.5rem, 3vw, 2.4rem);
+}
+
+@media (min-width: 960px) {
+  .surface-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -195,6 +248,7 @@ function marketLabel(value: string): string {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+  min-height: 100%;
 }
 
 .surface h3 {
@@ -232,6 +286,13 @@ function marketLabel(value: string): string {
   color: var(--text);
 }
 
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
+}
+
 .table-scroll tbody tr:hover {
   background: rgba(15, 167, 201, 0.08);
 }
@@ -248,6 +309,11 @@ function marketLabel(value: string): string {
 
 .negative {
   color: var(--accent-red);
+  font-weight: 600;
+}
+
+.mixed {
+  color: var(--accent-orange, #d97706);
   font-weight: 600;
 }
 

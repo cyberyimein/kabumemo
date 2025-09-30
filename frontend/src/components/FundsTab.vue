@@ -64,7 +64,7 @@
               <tr>
                 <th>{{ t("funds.table.name") }}</th>
                 <th>{{ t("funds.table.currency") }}</th>
-                <th>{{ t("funds.table.initial") }}</th>
+                <th class="numeric">{{ t("funds.table.initial") }}</th>
                 <th>{{ t("funds.table.notes") }}</th>
                 <th>{{ t("funds.table.actions") }}</th>
               </tr>
@@ -75,8 +75,8 @@
               </tr>
               <tr v-for="group in fundingGroups" :key="group.name">
                 <td>{{ group.name }}</td>
-                <td>{{ group.currency }}</td>
-                <td>
+                <td>{{ currencyLabel(group.currency) }}</td>
+                <td class="numeric">
                   {{ formatCurrency(group.initial_amount, group.currency) }}
                 </td>
                 <td>{{ group.notes || "-" }}</td>
@@ -104,31 +104,93 @@
             <tr>
               <th>{{ t("funds.snapshotTable.name") }}</th>
               <th>{{ t("funds.snapshotTable.currency") }}</th>
-              <th>{{ t("funds.snapshotTable.initial") }}</th>
-              <th>{{ t("funds.snapshotTable.cash") }}</th>
-              <th>{{ t("funds.snapshotTable.holdingCost") }}</th>
-              <th>{{ t("funds.snapshotTable.current") }}</th>
-              <th>{{ t("funds.snapshotTable.pl") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.initial") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.cash") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.holdingCost") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.current") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.pl") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.currentYearPl") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.currentYearRatio") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.previousYearPl") }}</th>
+              <th class="numeric">{{ t("funds.snapshotTable.previousYearRatio") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!funds.length">
-              <td colspan="5" class="empty">{{ t("funds.emptySnapshot") }}</td>
+              <td colspan="11" class="empty">{{ t("funds.emptySnapshot") }}</td>
             </tr>
             <tr v-for="item in funds" :key="item.name">
               <td>{{ item.name }}</td>
-              <td>{{ item.currency }}</td>
-              <td>{{ formatCurrency(item.initial_amount, item.currency) }}</td>
-              <td>{{ formatCurrency(item.cash_balance, item.currency) }}</td>
-              <td>{{ formatCurrency(item.holding_cost, item.currency) }}</td>
-              <td>{{ formatCurrency(item.current_total, item.currency) }}</td>
-              <td
-                :class="{
-                  positive: item.total_pl >= 0,
-                  negative: item.total_pl < 0,
-                }"
-              >
+              <td>{{ currencyLabel(item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.cash_balance, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.holding_cost, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.current_total, item.currency) }}</td>
+              <td :class="['numeric', valueClass(item.total_pl)]">
                 {{ formatCurrency(item.total_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', valueClass(item.current_year_pl)]">
+                {{ formatCurrency(item.current_year_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(item.current_year_pl_ratio)]">
+                {{ formatRatio(item.current_year_pl_ratio) }}
+              </td>
+              <td :class="['numeric', valueClass(item.previous_year_pl)]">
+                {{ formatCurrency(item.previous_year_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(item.previous_year_pl_ratio)]">
+                {{ formatRatio(item.previous_year_pl_ratio) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="surface">
+      <h3>{{ t("funds.aggregateTitle") }}</h3>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t("funds.aggregateTable.currency") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.groups") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.initial") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.cash") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.holdingCost") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.current") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.totalPl") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.currentYearPl") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.currentYearRatio") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.previousYearPl") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.previousYearRatio") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!aggregated.length">
+              <td colspan="11" class="empty">{{ t("funds.emptyAggregate") }}</td>
+            </tr>
+            <tr v-for="item in aggregated" :key="item.currency">
+              <td>{{ currencyLabel(item.currency) }}</td>
+              <td class="numeric">{{ item.group_count }}</td>
+              <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.cash_balance, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.holding_cost, item.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(item.current_total, item.currency) }}</td>
+              <td :class="['numeric', valueClass(item.total_pl)]">
+                {{ formatCurrency(item.total_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', valueClass(item.current_year_pl)]">
+                {{ formatCurrency(item.current_year_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(item.current_year_pl_ratio)]">
+                {{ formatRatio(item.current_year_pl_ratio) }}
+              </td>
+              <td :class="['numeric', valueClass(item.previous_year_pl)]">
+                {{ formatCurrency(item.previous_year_pl, item.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(item.previous_year_pl_ratio)]">
+                {{ formatRatio(item.previous_year_pl_ratio) }}
               </td>
             </tr>
           </tbody>
@@ -142,12 +204,18 @@
 import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { Currency, FundSnapshot, FundingGroup } from "@/types/api";
+import type {
+  AggregatedFundSnapshot,
+  Currency,
+  FundSnapshot,
+  FundingGroup,
+} from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
 
 const props = defineProps<{
   fundingGroups: FundingGroup[];
   funds: FundSnapshot[];
+  aggregated: AggregatedFundSnapshot[];
 }>();
 
 const emit = defineEmits<{
@@ -184,12 +252,51 @@ function resetForm(): void {
   form.notes = "";
 }
 
-function formatCurrency(value: number, currency: string): string {
+function currencyLabel(currency: Currency): string {
+  return currency === "USD" ? t("common.currencies.USD") : t("common.currencies.JPY");
+}
+
+function formatCurrency(value: number, currency: Currency): string {
   const locale = currency === "USD" ? "en-US" : "ja-JP";
-  return new Intl.NumberFormat(locale, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
+
+  if (currency === "JPY") {
+    return formatted.replace("￥", "¥");
+  }
+  return formatted;
+}
+
+function formatRatio(value: number | null): string {
+  if (value === null || Number.isNaN(value)) {
+    return "-";
+  }
+  return new Intl.NumberFormat("ja-JP", {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function valueClass(value: number): Record<string, boolean> {
+  return {
+    positive: value > 1e-9,
+    negative: value < -1e-9,
+  };
+}
+
+function ratioClass(value: number | null): Record<string, boolean> {
+  if (value === null || Number.isNaN(value)) {
+    return {};
+  }
+  return {
+    positive: value > 1e-6,
+    negative: value < -1e-6,
+  };
 }
 
 async function handleSubmit() {
@@ -330,6 +437,13 @@ function confirmDelete(name: string) {
   border-bottom: 1px solid var(--divider);
   font-size: 0.95rem;
   color: var(--text);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
 }
 
 .table-scroll tbody tr:hover {

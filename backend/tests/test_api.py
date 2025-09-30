@@ -112,17 +112,30 @@ def test_transaction_lifecycle(client: TestClient):
     pos_resp = client.get("/api/positions")
     assert pos_resp.status_code == 200
     positions = pos_resp.json()
-    assert positions[0]["quantity"] == 6
-    assert positions[0]["realized_pl"] == 20000
+    jpy_breakdown = positions[0]["breakdown"][0]
+    assert jpy_breakdown["quantity"] == 6
+    assert jpy_breakdown["realized_pl"] == 20000
 
     funds_resp = client.get("/api/funds")
     assert funds_resp.status_code == 200
-    funds = {item["name"]: item for item in funds_resp.json()}
+    payload = funds_resp.json()
+    funds = {item["name"]: item for item in payload["funds"]}
     default_fund = funds["Default JPY"]
     assert default_fund["cash_balance"] == -70000
     assert default_fund["holding_cost"] == 90000
     assert default_fund["current_total"] == 20000
     assert default_fund["total_pl"] == 20000
+    assert default_fund["current_year_pl"] == 20000
+    assert default_fund["previous_year_pl"] == 0
+    assert default_fund["current_year_pl_ratio"] is None
+    assert default_fund["previous_year_pl_ratio"] is None
+
+    aggregated = {item["currency"]: item for item in payload["aggregated"]}
+    jpy_aggregate = aggregated["JPY"]
+    assert jpy_aggregate["group_count"] >= 1
+    assert jpy_aggregate["current_total"] == default_fund["current_total"]
+    assert jpy_aggregate["total_pl"] == default_fund["total_pl"]
+    assert jpy_aggregate["current_year_pl"] == default_fund["current_year_pl"]
 
     tax_payload = {
         "transaction_id": sale_id,
@@ -148,12 +161,13 @@ def test_transaction_lifecycle(client: TestClient):
     assert "untaxed" in revert_after_settlement.text
 
     funds_after_tax = client.get("/api/funds").json()
-    funds_map = {item["name"]: item for item in funds_after_tax}
+    funds_map = {item["name"]: item for item in funds_after_tax["funds"]}
     after_tax_default = funds_map["Default JPY"]
     assert after_tax_default["cash_balance"] == -71000
     assert after_tax_default["holding_cost"] == 90000
     assert after_tax_default["current_total"] == 19000
     assert after_tax_default["total_pl"] == 19000
+    assert after_tax_default["current_year_pl"] == 19000
 
     second_tax = client.post("/api/tax/settlements", json=tax_payload)
     assert second_tax.status_code == 400
@@ -171,8 +185,9 @@ def test_transaction_lifecycle(client: TestClient):
     assert all(item["transaction_id"] != sale_id for item in remaining_settlements)
 
     positions_after_delete = client.get("/api/positions").json()
-    assert positions_after_delete[0]["quantity"] == 10
-    assert positions_after_delete[0]["realized_pl"] == 0
+    post_delete_breakdown = positions_after_delete[0]["breakdown"][0]
+    assert post_delete_breakdown["quantity"] == 10
+    assert post_delete_breakdown["realized_pl"] == 0
 
     delete_again = client.delete(f"/api/transactions/{sale_id}")
     assert delete_again.status_code == 404
@@ -213,9 +228,72 @@ def test_positions_include_pending_sell():
     assert len(positions) == 1
     position = positions[0]
     assert position.symbol == "8306"
-    assert position.quantity == 0
-    assert position.realized_pl == 10000
+    assert len(position.breakdown) == 1
+    component = position.breakdown[0]
+    assert component.currency.value == "JPY"
+    assert component.quantity == 0
+    assert component.realized_pl == 10000
 
+
+def test_positions_split_by_currency():
+    from datetime import date
+
+    from app.models.schemas import Currency, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_positions
+
+    usd_buy = Transaction(
+        id="usd-buy",
+        trade_date=date(2025, 7, 1),
+        symbol="TEST",
+        quantity=2,
+        gross_amount=200,
+        funding_group="USD Group",
+        cash_currency=Currency.USD,
+        market=Market.US,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    usd_sell = Transaction(
+        id="usd-sell",
+        trade_date=date(2025, 7, 5),
+        symbol="TEST",
+        quantity=-1,
+        gross_amount=150,
+        funding_group="USD Group",
+        cash_currency=Currency.USD,
+        market=Market.US,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+    jpy_buy = Transaction(
+        id="jpy-buy",
+        trade_date=date(2025, 7, 2),
+        symbol="TEST",
+        quantity=3,
+        gross_amount=300,
+        funding_group="JPY Group",
+        cash_currency=Currency.JPY,
+        market=Market.US,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+
+    positions = compute_positions([usd_buy, usd_sell, jpy_buy])
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "TEST"
+    assert len(position.breakdown) == 2
+
+    usd_entry = next(item for item in position.breakdown if item.currency == Currency.USD)
+    jpy_entry = next(item for item in position.breakdown if item.currency == Currency.JPY)
+
+    assert usd_entry.quantity == 1
+    assert usd_entry.average_cost == 100
+    assert usd_entry.realized_pl == 50
+
+    assert jpy_entry.quantity == 3
+    assert jpy_entry.average_cost == 100
+    assert jpy_entry.realized_pl == 0
 
 def test_fund_snapshot_respects_transaction_order():
     from datetime import date
@@ -249,12 +327,83 @@ def test_fund_snapshot_respects_transaction_order():
         memo=None,
     )
 
-    snapshots = compute_fund_snapshots([buy, sell], [group])
+    snapshots = compute_fund_snapshots([buy, sell], [group]).funds
     assert len(snapshots) == 1
     snapshot = snapshots[0]
     assert snapshot.holding_cost == 0
     assert snapshot.cash_balance == 20
     assert snapshot.current_total == 20
+
+
+def test_fund_snapshot_yearly_ratios():
+    from datetime import date
+
+    from app.models.schemas import Currency, FundingGroup, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_fund_snapshots
+
+    today = date.today()
+    current_year = today.year
+    previous_year = current_year - 1
+
+    group = FundingGroup(name="Yield Fund", currency=Currency.JPY, initial_amount=1000)
+    transactions = [
+        Transaction(
+            id="buy-prev",
+            trade_date=date(previous_year, 1, 10),
+            symbol="AAA",
+            quantity=1,
+            gross_amount=100,
+            funding_group=group.name,
+            cash_currency=Currency.JPY,
+            market=Market.JP,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="sell-prev",
+            trade_date=date(previous_year, 7, 1),
+            symbol="AAA",
+            quantity=-1,
+            gross_amount=150,
+            funding_group=group.name,
+            cash_currency=Currency.JPY,
+            market=Market.JP,
+            taxed=TaxStatus.NO,
+            memo=None,
+        ),
+        Transaction(
+            id="buy-current",
+            trade_date=date(current_year, 3, 1),
+            symbol="AAA",
+            quantity=1,
+            gross_amount=200,
+            funding_group=group.name,
+            cash_currency=Currency.JPY,
+            market=Market.JP,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="sell-current",
+            trade_date=date(current_year, 9, 1),
+            symbol="AAA",
+            quantity=-1,
+            gross_amount=250,
+            funding_group=group.name,
+            cash_currency=Currency.JPY,
+            market=Market.JP,
+            taxed=TaxStatus.NO,
+            memo=None,
+        ),
+    ]
+
+    snapshot = compute_fund_snapshots(transactions, [group]).funds[0]
+    assert snapshot.total_pl == pytest.approx(100)
+    assert snapshot.previous_year_pl == pytest.approx(50)
+    assert snapshot.previous_year_pl_ratio == pytest.approx(0.05)
+    expected_current_ratio = 50 / 1050
+    assert snapshot.current_year_pl == pytest.approx(50)
+    assert snapshot.current_year_pl_ratio == pytest.approx(expected_current_ratio)
 
 
 def test_tax_settlement_update_and_delete(client: TestClient):

@@ -70,7 +70,8 @@
       <FundsTab
         v-else-if="currentTab === 'funds'"
         :funding-groups="state.fundingGroups"
-        :funds="state.funds"
+        :funds="state.fundSnapshots.funds"
+        :aggregated="state.fundSnapshots.aggregated"
         @create="handleCreateFundingGroup"
         @delete="handleDeleteFundingGroup"
         @refresh="handleRefreshFunds"
@@ -120,6 +121,7 @@ import {
 import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
 import type { LocaleCode } from "@/i18n";
 import type {
+  AggregatedFundSnapshot,
   FundSnapshot,
   FundingGroup,
   HealthResponse,
@@ -156,7 +158,10 @@ function changeLocale(value: LocaleCode) {
 const state = reactive({
   transactions: [] as Transaction[],
   positions: [] as Position[],
-  funds: [] as FundSnapshot[],
+  fundSnapshots: {
+    funds: [] as FundSnapshot[],
+    aggregated: [] as AggregatedFundSnapshot[],
+  },
   fundingGroups: [] as FundingGroup[],
   taxSettlements: [] as TaxSettlementRecord[],
 });
@@ -198,7 +203,7 @@ onMounted(async () => {
 async function refreshAllData(showToast = false) {
   try {
     loading.value = true;
-    const [groups, transactions, positions, funds, settlements] = await Promise.all([
+    const [groups, transactions, positions, fundsSnapshot, settlements] = await Promise.all([
       getFundingGroups(),
       getTransactions(),
       getPositions(),
@@ -208,7 +213,8 @@ async function refreshAllData(showToast = false) {
     state.fundingGroups = groups;
     state.transactions = transactions;
     state.positions = positions;
-    state.funds = funds;
+    state.fundSnapshots.funds = fundsSnapshot.funds;
+    state.fundSnapshots.aggregated = fundsSnapshot.aggregated;
     state.taxSettlements = settlements;
     if (showToast) {
       showNotification("success", t("app.toasts.dataRefreshed"));
@@ -363,7 +369,9 @@ async function reloadPositions() {
 }
 
 async function reloadFunds() {
-  state.funds = await getFunds();
+  const snapshot = await getFunds();
+  state.fundSnapshots.funds = snapshot.funds;
+  state.fundSnapshots.aggregated = snapshot.aggregated;
 }
 
 async function reloadFundingGroups() {

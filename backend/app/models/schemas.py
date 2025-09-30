@@ -72,12 +72,17 @@ class TransactionUpdate(TransactionBase):
     pass
 
 
-class Position(BaseModel):
-    symbol: str
+class PositionBreakdown(BaseModel):
+    currency: Currency
     quantity: float
     average_cost: float
     realized_pl: float
+
+
+class Position(BaseModel):
+    symbol: str
     market: Market
+    breakdown: list[PositionBreakdown]
 
 
 class FundSnapshot(BaseModel):
@@ -88,6 +93,29 @@ class FundSnapshot(BaseModel):
     holding_cost: float
     current_total: float
     total_pl: float
+    current_year_pl: float
+    current_year_pl_ratio: float | None
+    previous_year_pl: float
+    previous_year_pl_ratio: float | None
+
+
+class AggregatedFundSnapshot(BaseModel):
+    currency: Currency
+    group_count: int
+    initial_amount: float
+    cash_balance: float
+    holding_cost: float
+    current_total: float
+    total_pl: float
+    current_year_pl: float
+    current_year_pl_ratio: float | None
+    previous_year_pl: float
+    previous_year_pl_ratio: float | None
+
+
+class FundSnapshots(BaseModel):
+    funds: list[FundSnapshot]
+    aggregated: list[AggregatedFundSnapshot]
 
 
 class TaxSettlementRequest(BaseModel):

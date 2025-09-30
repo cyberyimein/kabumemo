@@ -97,8 +97,8 @@ Default development endpoints:
 | POST   | `/api/transactions`                  | Create a transaction, auto-generating a UUID and validating positions  |
 | PUT    | `/api/transactions/{transaction_id}` | Update a transaction while enforcing funding group and position checks |
 | DELETE | `/api/transactions/{transaction_id}` | Delete a transaction and clean up any related tax records              |
-| GET    | `/api/positions`                     | Compute positions and realized P/L from transactions                   |
-| GET    | `/api/funds`                         | Return fund group snapshots (initial capital, current total, P/L)      |
+| GET    | `/api/positions`                     | Compute positions with per-currency breakdowns and realized P/L        |
+| GET    | `/api/funds`                         | Return fund snapshots plus currency-level aggregates and yearly ratios |
 | GET    | `/api/funding-groups`                | List funding groups; creates Default JPY/USD on first launch           |
 | POST   | `/api/funding-groups`                | Create or overwrite a funding group                                    |
 | PATCH  | `/api/funding-groups/{name}`         | Update a group’s currency, initial capital, or notes                   |
@@ -106,6 +106,8 @@ Default development endpoints:
 | POST   | `/api/tax/settlements`               | Record tax settlements, updating both funds and tax status             |
 
 Every endpoint returns JSON, with errors exposing a `detail` field. `tests/test_api.py` exercises critical flows such as buying/selling, tax settlement, and deletion.
+
+`GET /api/funds` responds with an object containing a `funds` array (per-group snapshots) and an `aggregated` array (currency-level rollups with year-to-date and prior-year metrics), which the frontend renders side by side.
 
 ## Frontend Feature Overview
 
@@ -116,9 +118,10 @@ The UI uses tabs to organize primary workflows:
   - Click any row to prefill the form for rapid re-entry, or use the action column to edit/delete with confirmation without losing the quick-entry workflow.
   - A refresh button pulls the newest data from the backend.
 - **Positions**
-  - Calculates holdings, average cost, and realized P/L directly from the transaction ledger.
+  - Calculates holdings with per-currency quantity/average-cost breakdowns, including realized P/L.
 - **Funds & Groups**
-  - Manage funding groups (create, edit, delete) and visualize fund snapshots.
+  - Manage funding groups (create, edit, delete) and visualize detailed fund snapshots with year-over-year metrics.
+  - View currency-level aggregates to compare overall cash, holdings, and profitability across groups.
   - Deletion checks that at least one group remains; all copy is localized.
 - **Tax**
   - Automatically lists sell trades whose tax status is still pending.
