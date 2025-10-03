@@ -79,10 +79,19 @@ class PositionBreakdown(BaseModel):
     realized_pl: float
 
 
+class PositionGroupBreakdown(BaseModel):
+    funding_group: str
+    currency: Currency
+    quantity: float
+    average_cost: float
+    realized_pl: float
+
+
 class Position(BaseModel):
     symbol: str
     market: Market
     breakdown: list[PositionBreakdown]
+    group_breakdown: list[PositionGroupBreakdown] = Field(default_factory=list)
 
 
 class FundSnapshot(BaseModel):

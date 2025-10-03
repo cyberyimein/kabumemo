@@ -142,3 +142,11 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 - Broaden test coverage for multi-currency and cross-group edge cases.
 - Provide backup/restore utilities (CSV/ZIP).
 - Explore packaging into a desktop shortcut or single-file binary.
+
+## Recent Work — 2025-10-03
+
+- **Positions analytics refresh**: The backend `analytics` service now computes per-funding-group breakdowns for each holding, with matching schema updates and regression tests to keep historical scenarios covered.
+- **UI expansion**: Positions rows can be expanded to reveal group-level metrics, providing quantity, cost, and realized P/L visibility without leaving the table.
+- **Pagination everywhere**: Introduced a reusable `usePagination` composable and `PaginationControls` component, then wired them into the Trades, Positions, Funds, and Tax tabs so large datasets stay fast and scannable (50 rows per page by default).
+- **Localized copy**: Added English/Japanese/Chinese strings for the new pagination controls to keep the tri-language experience consistent.
+- **Quality gates**: Verified changes with the existing pytest suite and `npm run build` to ensure analytics logic and the Vue bundle remain healthy.

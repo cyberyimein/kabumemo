@@ -60,7 +60,13 @@
       "year": "Year"
     },
     "select": "Select",
-    "selected": "Selected"
+    "selected": "Selected",
+    "pagination": {
+      "label": "Pagination navigation",
+      "previous": "Previous",
+      "next": "Next",
+      "summary": "Page {page} of {pages} · {total} items"
+    }
   },
   "transactions": {
     "title": "Trades",
@@ -125,6 +131,9 @@
       "quantity": "Quantity",
       "cost": "Average Cost",
       "pl": "Realized P&L"
+    },
+    "groupTable": {
+      "group": "Funding Group"
     },
     "emptyActive": "No active positions",
     "emptyClosed": "No closed positions",

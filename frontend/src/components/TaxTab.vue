@@ -29,7 +29,7 @@
               <tr v-if="!pendingTransactions.length">
                 <td colspan="6" class="empty">{{ t("tax.empty") }}</td>
               </tr>
-              <tr v-for="item in sortedPending" :key="item.id">
+              <tr v-for="item in pagedPending" :key="item.id">
                 <td>{{ item.trade_date }}</td>
                 <td>{{ item.symbol }}</td>
                 <td class="numeric negative">{{ formatNumber(item.quantity) }}</td>
@@ -55,6 +55,13 @@
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="pendingTotalItems || pendingTotalPages > 1"
+          :page="pendingPage"
+          :total-pages="pendingTotalPages"
+          :total-items="pendingTotalItems"
+          @update:page="setPendingPage"
+        />
       </div>
 
       <form class="surface" @submit.prevent="handleSubmit">
@@ -187,7 +194,7 @@
                 <td colspan="7" class="empty">{{ t("tax.historyEmpty") }}</td>
               </tr>
               <tr
-                v-for="row in settlementRows"
+                v-for="row in pagedSettlementRows"
                 :key="row.record.id"
                 :class="{ active: editingSettlementId === row.record.id }"
               >
@@ -223,6 +230,13 @@
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="settlementTotalItems || settlementTotalPages > 1"
+          :page="settlementPage"
+          :total-pages="settlementTotalPages"
+          :total-items="settlementTotalItems"
+          @update:page="setSettlementPage"
+        />
       </div>
     </div>
   </section>
@@ -232,6 +246,8 @@
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import PaginationControls from "./ui/PaginationControls.vue";
+import { usePagination } from "@/composables/usePagination";
 import type {
   Currency,
   FundingGroup,
@@ -330,6 +346,19 @@ const sortedPending = computed(() =>
   )
 );
 
+const {
+  page: pendingPage,
+  totalPages: pendingTotalPages,
+  totalItems: pendingTotalItems,
+  offset: pendingOffset,
+  pageSize: pendingPageSize,
+  setPage: setPendingPage,
+} = usePagination(computed(() => sortedPending.value.length));
+
+const pagedPending = computed(() =>
+  sortedPending.value.slice(pendingOffset.value, pendingOffset.value + pendingPageSize)
+);
+
 const sortedSettlements = computed(() =>
   [...props.settlements].sort((a, b) =>
     a.recorded_at < b.recorded_at ? 1 : -1
@@ -341,6 +370,22 @@ const settlementRows = computed(() =>
     record,
     transaction: transactionLookup.value.get(record.transaction_id) ?? null,
   }))
+);
+
+const {
+  page: settlementPage,
+  totalPages: settlementTotalPages,
+  totalItems: settlementTotalItems,
+  offset: settlementOffset,
+  pageSize: settlementPageSize,
+  setPage: setSettlementPage,
+} = usePagination(computed(() => settlementRows.value.length));
+
+const pagedSettlementRows = computed(() =>
+  settlementRows.value.slice(
+    settlementOffset.value,
+    settlementOffset.value + settlementPageSize
+  )
 );
 
 const currencyOptions = computed(() => [

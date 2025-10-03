@@ -44,10 +44,19 @@ export interface PositionBreakdown {
   realized_pl: number;
 }
 
+export interface PositionGroupBreakdown {
+  funding_group: string;
+  currency: Currency;
+  quantity: number;
+  average_cost: number;
+  realized_pl: number;
+}
+
 export interface Position {
   symbol: string;
   market: Market;
   breakdown: PositionBreakdown[];
+  group_breakdown: PositionGroupBreakdown[];
 }
 
 export interface FundSnapshot {

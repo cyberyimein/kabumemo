@@ -60,7 +60,13 @@
       "year": "年"
     },
     "select": "選択",
-    "selected": "選択済み"
+    "selected": "選択済み",
+    "pagination": {
+      "label": "ページネーション",
+      "previous": "前へ",
+      "next": "次へ",
+      "summary": "{page}/{pages} ページ · 全 {total} 件"
+    }
   },
   "transactions": {
     "title": "取引",
@@ -125,6 +131,9 @@
       "quantity": "数量",
       "cost": "平均取得単価",
       "pl": "実現損益"
+    },
+    "groupTable": {
+      "group": "資金グループ"
     },
     "emptyActive": "保有中のポジションがありません",
     "emptyClosed": "解消済みのポジションがありません",

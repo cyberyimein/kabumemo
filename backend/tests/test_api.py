@@ -115,6 +115,15 @@ def test_transaction_lifecycle(client: TestClient):
     jpy_breakdown = positions[0]["breakdown"][0]
     assert jpy_breakdown["quantity"] == 6
     assert jpy_breakdown["realized_pl"] == 20000
+    group_breakdown = positions[0]["group_breakdown"]
+    assert any(entry["funding_group"] == "Default JPY" for entry in group_breakdown)
+    default_group_entry = next(
+        entry for entry in group_breakdown if entry["funding_group"] == "Default JPY"
+    )
+    assert default_group_entry["currency"] == "JPY"
+    assert default_group_entry["quantity"] == 6
+    assert default_group_entry["average_cost"] == pytest.approx(15000)
+    assert default_group_entry["realized_pl"] == pytest.approx(20000)
 
     funds_resp = client.get("/api/funds")
     assert funds_resp.status_code == 200
@@ -188,6 +197,10 @@ def test_transaction_lifecycle(client: TestClient):
     post_delete_breakdown = positions_after_delete[0]["breakdown"][0]
     assert post_delete_breakdown["quantity"] == 10
     assert post_delete_breakdown["realized_pl"] == 0
+    post_delete_group = positions_after_delete[0]["group_breakdown"]
+    assert post_delete_group[0]["funding_group"] == "Default JPY"
+    assert post_delete_group[0]["quantity"] == 10
+    assert post_delete_group[0]["realized_pl"] == 0
 
     delete_again = client.delete(f"/api/transactions/{sale_id}")
     assert delete_again.status_code == 404
@@ -233,6 +246,12 @@ def test_positions_include_pending_sell():
     assert component.currency.value == "JPY"
     assert component.quantity == 0
     assert component.realized_pl == 10000
+    assert len(position.group_breakdown) == 1
+    group_entry = position.group_breakdown[0]
+    assert group_entry.funding_group == "Default JPY"
+    assert group_entry.currency.value == "JPY"
+    assert group_entry.quantity == 0
+    assert group_entry.realized_pl == 10000
 
 
 def test_positions_split_by_currency():
@@ -294,6 +313,23 @@ def test_positions_split_by_currency():
     assert jpy_entry.quantity == 3
     assert jpy_entry.average_cost == 100
     assert jpy_entry.realized_pl == 0
+
+    assert len(position.group_breakdown) == 2
+    usd_group_entry = next(
+        item for item in position.group_breakdown if item.funding_group == "USD Group"
+    )
+    assert usd_group_entry.currency == Currency.USD
+    assert usd_group_entry.quantity == 1
+    assert usd_group_entry.average_cost == 100
+    assert usd_group_entry.realized_pl == 50
+
+    jpy_group_entry = next(
+        item for item in position.group_breakdown if item.funding_group == "JPY Group"
+    )
+    assert jpy_group_entry.currency == Currency.JPY
+    assert jpy_group_entry.quantity == 3
+    assert jpy_group_entry.average_cost == 100
+    assert jpy_group_entry.realized_pl == 0
 
 def test_fund_snapshot_respects_transaction_order():
     from datetime import date

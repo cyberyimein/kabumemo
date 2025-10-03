@@ -28,18 +28,75 @@
               <tr v-if="!activePositions.length">
                 <td colspan="5" class="empty">{{ t("positions.emptyActive") }}</td>
               </tr>
-              <tr v-for="item in activePositions" :key="`${item.symbol}-${item.market}`">
-                <td>{{ item.symbol }}</td>
-                <td>{{ marketLabel(item.market) }}</td>
-                <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
-                <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
-                <td :class="['numeric', profitClass(item.breakdown)]">
-                  {{ formatProfitBreakdown(item.breakdown) }}
-                </td>
-              </tr>
+              <template v-for="item in pagedActivePositions" :key="rowKey(item)">
+                <tr
+                  :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
+                  @click="handleRowClick(item)"
+                >
+                  <td>
+                    <div class="symbol-cell">
+                      <span
+                        v-if="hasGroupBreakdown(item)"
+                        :class="['chevron', { open: isExpanded(rowKey(item)) }]"
+                        aria-hidden="true"
+                      ></span>
+                      <span>{{ item.symbol }}</span>
+                    </div>
+                  </td>
+                  <td>{{ marketLabel(item.market) }}</td>
+                  <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
+                  <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
+                  <td :class="['numeric', profitClass(item.breakdown)]">
+                    {{ formatProfitBreakdown(item.breakdown) }}
+                  </td>
+                </tr>
+                <tr
+                  v-if="hasGroupBreakdown(item) && isExpanded(rowKey(item))"
+                  :key="`${rowKey(item)}-details`"
+                  class="group-row"
+                >
+                  <td colspan="5">
+                    <div class="group-table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{{ t("positions.groupTable.group") }}</th>
+                            <th class="numeric">{{ t("positions.table.quantity") }}</th>
+                            <th class="numeric">{{ t("positions.table.cost") }}</th>
+                            <th class="numeric">{{ t("positions.table.pl") }}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr
+                            v-for="group in item.group_breakdown"
+                            :key="groupKey(item, group)"
+                          >
+                            <td>
+                              <span class="group-name">{{ group.funding_group }}</span>
+                              <span class="group-currency">{{ currencySymbol(group.currency) }}</span>
+                            </td>
+                            <td class="numeric">{{ formatGroupQuantity(group) }}</td>
+                            <td class="numeric">{{ formatCurrencyValue(group.average_cost, group.currency) }}</td>
+                            <td :class="['numeric', profitClassForGroup(group)]">
+                              {{ formatCurrencyValue(group.realized_pl, group.currency) }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="activeTotalItems || activeTotalPages > 1"
+          :page="activePage"
+          :total-pages="activeTotalPages"
+          :total-items="activeTotalItems"
+          @update:page="setActivePage"
+        />
       </section>
 
       <section class="surface">
@@ -58,27 +115,86 @@
               <tr v-if="!closedPositions.length">
                 <td colspan="4" class="empty">{{ t("positions.emptyClosed") }}</td>
               </tr>
-              <tr v-for="item in closedPositions" :key="`${item.symbol}-${item.market}`">
-                <td>{{ item.symbol }}</td>
-                <td>{{ marketLabel(item.market) }}</td>
-                <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
-                <td :class="['numeric', profitClass(item.breakdown)]">
-                  {{ formatProfitBreakdown(item.breakdown) }}
-                </td>
-              </tr>
+              <template v-for="item in pagedClosedPositions" :key="rowKey(item)">
+                <tr
+                  :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
+                  @click="handleRowClick(item)"
+                >
+                  <td>
+                    <div class="symbol-cell">
+                      <span
+                        v-if="hasGroupBreakdown(item)"
+                        :class="['chevron', { open: isExpanded(rowKey(item)) }]"
+                        aria-hidden="true"
+                      ></span>
+                      <span>{{ item.symbol }}</span>
+                    </div>
+                  </td>
+                  <td>{{ marketLabel(item.market) }}</td>
+                  <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
+                  <td :class="['numeric', profitClass(item.breakdown)]">
+                    {{ formatProfitBreakdown(item.breakdown) }}
+                  </td>
+                </tr>
+                <tr
+                  v-if="hasGroupBreakdown(item) && isExpanded(rowKey(item))"
+                  :key="`${rowKey(item)}-details`"
+                  class="group-row"
+                >
+                  <td colspan="4">
+                    <div class="group-table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{{ t("positions.groupTable.group") }}</th>
+                            <th class="numeric">{{ t("positions.table.quantity") }}</th>
+                            <th class="numeric">{{ t("positions.table.cost") }}</th>
+                            <th class="numeric">{{ t("positions.table.pl") }}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr
+                            v-for="group in item.group_breakdown"
+                            :key="groupKey(item, group)"
+                          >
+                            <td>
+                              <span class="group-name">{{ group.funding_group }}</span>
+                              <span class="group-currency">{{ currencySymbol(group.currency) }}</span>
+                            </td>
+                            <td class="numeric">{{ formatGroupQuantity(group) }}</td>
+                            <td class="numeric">{{ formatCurrencyValue(group.average_cost, group.currency) }}</td>
+                            <td :class="['numeric', profitClassForGroup(group)]">
+                              {{ formatCurrencyValue(group.realized_pl, group.currency) }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="closedTotalItems || closedTotalPages > 1"
+          :page="closedPage"
+          :total-pages="closedTotalPages"
+          :total-items="closedTotalItems"
+          @update:page="setClosedPage"
+        />
       </section>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { Position, PositionBreakdown } from "@/types/api";
+import PaginationControls from "./ui/PaginationControls.vue";
+import { usePagination } from "@/composables/usePagination";
+import type { Position, PositionBreakdown, PositionGroupBreakdown } from "@/types/api";
 
 const props = defineProps<{ positions: Position[] }>();
 
@@ -94,7 +210,81 @@ function hasOpenQuantity(position: Position): boolean {
 
 const activePositions = computed(() => props.positions.filter(hasOpenQuantity));
 
+const {
+  page: activePage,
+  totalPages: activeTotalPages,
+  totalItems: activeTotalItems,
+  offset: activeOffset,
+  pageSize: activePageSize,
+  setPage: setActivePage,
+} = usePagination(computed(() => activePositions.value.length));
+
+const pagedActivePositions = computed(() =>
+  activePositions.value.slice(activeOffset.value, activeOffset.value + activePageSize)
+);
+
 const closedPositions = computed(() => props.positions.filter((item) => !hasOpenQuantity(item)));
+
+const {
+  page: closedPage,
+  totalPages: closedTotalPages,
+  totalItems: closedTotalItems,
+  offset: closedOffset,
+  pageSize: closedPageSize,
+  setPage: setClosedPage,
+} = usePagination(computed(() => closedPositions.value.length));
+
+const pagedClosedPositions = computed(() =>
+  closedPositions.value.slice(closedOffset.value, closedOffset.value + closedPageSize)
+);
+
+const expandedRows = ref<Set<string>>(new Set());
+
+function rowKey(position: Position): string {
+  return `${position.symbol}-${position.market}`;
+}
+
+function hasGroupBreakdown(position: Position): boolean {
+  return Array.isArray(position.group_breakdown) && position.group_breakdown.length > 0;
+}
+
+function isExpanded(key: string): boolean {
+  return expandedRows.value.has(key);
+}
+
+function toggleRow(key: string): void {
+  const next = new Set(expandedRows.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedRows.value = next;
+}
+
+function handleRowClick(position: Position): void {
+  if (!hasGroupBreakdown(position)) {
+    return;
+  }
+  toggleRow(rowKey(position));
+}
+
+function groupKey(position: Position, entry: PositionGroupBreakdown): string {
+  return `${rowKey(position)}-${entry.funding_group}-${entry.currency}`;
+}
+
+watch(
+  () => props.positions,
+  (positions) => {
+    if (!expandedRows.value.size) {
+      return;
+    }
+    const validKeys = new Set(positions.map(rowKey));
+    expandedRows.value = new Set(
+      [...expandedRows.value].filter((key) => validKeys.has(key))
+    );
+  }
+);
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
@@ -140,6 +330,10 @@ function formatQuantityBreakdown(breakdown: PositionBreakdown[]): string {
   return formatted.map((entry) => entry.display).join(" / ");
 }
 
+function formatGroupQuantity(entry: PositionGroupBreakdown): string {
+  return `${formatNumber(entry.quantity)}${currencySymbol(entry.currency)}`;
+}
+
 function formatAverageCostBreakdown(breakdown: PositionBreakdown[]): string {
   if (!breakdown.length) {
     return "-";
@@ -170,6 +364,17 @@ function profitClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
     negative: negative && !positive,
     mixed: positive && negative,
   };
+}
+
+function profitClassForGroup(entry: PositionGroupBreakdown): Record<string, boolean> {
+  return profitClass([
+    {
+      currency: entry.currency,
+      quantity: entry.quantity,
+      average_cost: entry.average_cost,
+      realized_pl: entry.realized_pl,
+    } as PositionBreakdown,
+  ]);
 }
 
 function marketLabel(value: string): string {
@@ -295,6 +500,77 @@ function marketLabel(value: string): string {
 
 .table-scroll tbody tr:hover {
   background: rgba(15, 167, 201, 0.08);
+}
+
+.position-row.clickable td {
+  cursor: pointer;
+}
+
+.position-row.expanded {
+  background: rgba(15, 167, 201, 0.12);
+}
+
+.symbol-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chevron {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border: solid var(--text-dim);
+  border-width: 0 0.12rem 0.12rem 0;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.chevron.open {
+  transform: rotate(135deg);
+  border-color: var(--accent);
+}
+
+.group-row td {
+  padding: 0;
+  background: rgba(11, 61, 145, 0.04);
+}
+
+.group-table-wrapper {
+  padding: 0.6rem 1.25rem 1rem;
+}
+
+.group-table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.group-table-wrapper thead {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.group-table-wrapper th,
+.group-table-wrapper td {
+  border-bottom: 1px solid var(--divider);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+}
+
+.group-table-wrapper tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.group-name {
+  font-weight: 600;
+  margin-right: 0.4rem;
+}
+
+.group-currency {
+  color: var(--text-faint);
+  font-size: 0.82rem;
 }
 
 .empty {

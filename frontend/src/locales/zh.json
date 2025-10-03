@@ -60,7 +60,13 @@
       "year": "年份"
     },
     "select": "选择",
-    "selected": "已选择"
+    "selected": "已选择",
+    "pagination": {
+      "label": "分页导航",
+      "previous": "上一页",
+      "next": "下一页",
+      "summary": "第 {page}/{pages} 页，共 {total} 条"
+    }
   },
   "transactions": {
     "title": "交易表",
@@ -125,6 +131,9 @@
       "quantity": "数量",
       "cost": "平均成本",
       "pl": "落地盈亏"
+    },
+    "groupTable": {
+      "group": "资金组"
     },
     "emptyActive": "暂无持仓",
     "emptyClosed": "暂无历史持仓",

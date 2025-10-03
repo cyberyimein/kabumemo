@@ -73,7 +73,7 @@
               <tr v-if="!fundingGroups.length">
                 <td colspan="5" class="empty">{{ t("funds.emptyGroups") }}</td>
               </tr>
-              <tr v-for="group in fundingGroups" :key="group.name">
+              <tr v-for="group in pagedFundingGroups" :key="group.name">
                 <td>{{ group.name }}</td>
                 <td>{{ currencyLabel(group.currency) }}</td>
                 <td class="numeric">
@@ -93,6 +93,13 @@
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="groupsTotalItems || groupsTotalPages > 1"
+          :page="groupsPage"
+          :total-pages="groupsTotalPages"
+          :total-items="groupsTotalItems"
+          @update:page="setGroupsPage"
+        />
       </div>
     </div>
 
@@ -119,7 +126,7 @@
             <tr v-if="!funds.length">
               <td colspan="11" class="empty">{{ t("funds.emptySnapshot") }}</td>
             </tr>
-            <tr v-for="item in funds" :key="item.name">
+            <tr v-for="item in pagedFunds" :key="item.name">
               <td>{{ item.name }}</td>
               <td>{{ currencyLabel(item.currency) }}</td>
               <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
@@ -145,6 +152,13 @@
           </tbody>
         </table>
       </div>
+      <PaginationControls
+        v-if="fundsTotalItems || fundsTotalPages > 1"
+        :page="fundsPage"
+        :total-pages="fundsTotalPages"
+        :total-items="fundsTotalItems"
+        @update:page="setFundsPage"
+      />
     </div>
 
     <div class="surface">
@@ -170,7 +184,7 @@
             <tr v-if="!aggregated.length">
               <td colspan="11" class="empty">{{ t("funds.emptyAggregate") }}</td>
             </tr>
-            <tr v-for="item in aggregated" :key="item.currency">
+            <tr v-for="item in pagedAggregated" :key="item.currency">
               <td>{{ currencyLabel(item.currency) }}</td>
               <td class="numeric">{{ item.group_count }}</td>
               <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
@@ -196,6 +210,13 @@
           </tbody>
         </table>
       </div>
+      <PaginationControls
+        v-if="aggregateTotalItems || aggregateTotalPages > 1"
+        :page="aggregatePage"
+        :total-pages="aggregateTotalPages"
+        :total-items="aggregateTotalItems"
+        @update:page="setAggregatePage"
+      />
     </div>
   </section>
 </template>
@@ -204,6 +225,8 @@
 import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import PaginationControls from "./ui/PaginationControls.vue";
+import { usePagination } from "@/composables/usePagination";
 import type {
   AggregatedFundSnapshot,
   Currency,
@@ -244,6 +267,45 @@ const currencyOptions = computed(() => [
     value: "USD" as Currency,
   },
 ]);
+
+const {
+  page: groupsPage,
+  totalPages: groupsTotalPages,
+  totalItems: groupsTotalItems,
+  offset: groupsOffset,
+  pageSize: groupsPageSize,
+  setPage: setGroupsPage,
+} = usePagination(computed(() => props.fundingGroups.length));
+
+const pagedFundingGroups = computed(() =>
+  props.fundingGroups.slice(groupsOffset.value, groupsOffset.value + groupsPageSize)
+);
+
+const {
+  page: fundsPage,
+  totalPages: fundsTotalPages,
+  totalItems: fundsTotalItems,
+  offset: fundsOffset,
+  pageSize: fundsPageSize,
+  setPage: setFundsPage,
+} = usePagination(computed(() => props.funds.length));
+
+const pagedFunds = computed(() =>
+  props.funds.slice(fundsOffset.value, fundsOffset.value + fundsPageSize)
+);
+
+const {
+  page: aggregatePage,
+  totalPages: aggregateTotalPages,
+  totalItems: aggregateTotalItems,
+  offset: aggregateOffset,
+  pageSize: aggregatePageSize,
+  setPage: setAggregatePage,
+} = usePagination(computed(() => props.aggregated.length));
+
+const pagedAggregated = computed(() =>
+  props.aggregated.slice(aggregateOffset.value, aggregateOffset.value + aggregatePageSize)
+);
 
 function resetForm(): void {
   form.name = "";

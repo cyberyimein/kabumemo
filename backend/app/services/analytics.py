@@ -14,6 +14,7 @@ from ..models.schemas import (
     Market,
     Position,
     PositionBreakdown,
+    PositionGroupBreakdown,
     TaxSettlementRecord,
     TaxSettlementRequest,
     TaxSettlementUpdate,
@@ -24,11 +25,19 @@ from ..storage.repository import LocalDataRepository
 
 
 def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
-    inventory: dict[str, dict[Currency, dict[str, float]]] = defaultdict(
-        lambda: defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
+    inventory: dict[str, dict[Currency, defaultdict[str, dict[str, float]]]] = defaultdict(
+        lambda: defaultdict(
+            lambda: defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
+        )
     )
     markets: dict[str, Market] = {}
-    realized: dict[str, defaultdict[Currency, float]] = {}
+    realized_totals: dict[str, defaultdict[Currency, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    realized_by_group: dict[
+        str, defaultdict[Currency, defaultdict[str, float]]
+    ] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+
     sorted_transactions = [
         tx
         for _, tx in sorted(
@@ -40,59 +49,90 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
     for tx in sorted_transactions:
         symbol = tx.symbol
         currency = tx.cash_currency
-        record = inventory[symbol][currency]
         markets[symbol] = tx.market
-        currency_realized = realized.setdefault(symbol, defaultdict(float))
 
-        current_qty = record["quantity"]
-        total_cost = record["total_cost"]
+        currency_groups = inventory[symbol][currency]
+        group_record = currency_groups[tx.funding_group]
+
+        total_realized = realized_totals[symbol]
+        group_realized = realized_by_group[symbol][currency]
 
         if tx.quantity > 0:
-            new_qty = current_qty + tx.quantity
-            new_cost = total_cost + tx.gross_amount
+            group_record["quantity"] += tx.quantity
+            group_record["total_cost"] += tx.gross_amount
         else:
-            if current_qty <= 0:
-                # No inventory to offset this sale; skip to avoid division by zero
+            if group_record["quantity"] <= 0:
+                # No inventory recorded for this funding group; skip to avoid invalid math
                 continue
 
-            sell_qty = min(-tx.quantity, current_qty)
-            avg_cost = total_cost / current_qty if current_qty else 0.0
+            sell_qty = min(-tx.quantity, group_record["quantity"])
+            avg_cost = (
+                group_record["total_cost"] / group_record["quantity"]
+                if group_record["quantity"]
+                else 0.0
+            )
             realized_profit = tx.gross_amount - avg_cost * sell_qty
-            currency_realized[currency] += realized_profit
-            new_qty = current_qty + tx.quantity
-            new_cost = total_cost + avg_cost * tx.quantity
-            if new_qty <= 1e-9:
-                new_qty = 0.0
-                new_cost = 0.0
 
-        record["quantity"] = new_qty
-        record["total_cost"] = max(new_cost, 0.0)
+            group_record["quantity"] += tx.quantity
+            group_record["total_cost"] += avg_cost * tx.quantity
+
+            if group_record["quantity"] <= 1e-9:
+                group_record["quantity"] = 0.0
+                group_record["total_cost"] = 0.0
+            else:
+                group_record["total_cost"] = max(group_record["total_cost"], 0.0)
+
+            total_realized[currency] += realized_profit
+            group_realized[tx.funding_group] += realized_profit
 
     positions: list[Position] = []
-    for symbol, currency_records in inventory.items():
+    for symbol, currency_groups in inventory.items():
         breakdown: list[PositionBreakdown] = []
-        currency_realized = realized.get(symbol, defaultdict(float))
-        for currency, record in currency_records.items():
-            qty = record["quantity"]
-            total_cost = record["total_cost"]
-            avg_cost = total_cost / qty if qty else 0.0
+        group_breakdown: list[PositionGroupBreakdown] = []
+        total_realized_map = realized_totals[symbol]
+        group_realized_map = realized_by_group[symbol]
+
+        for currency, groups in currency_groups.items():
+            total_qty = sum(record["quantity"] for record in groups.values())
+            total_cost = sum(record["total_cost"] for record in groups.values())
+            avg_cost = total_cost / total_qty if total_qty else 0.0
+
             breakdown.append(
                 PositionBreakdown(
                     currency=currency,
-                    quantity=round(qty, 4),
+                    quantity=round(total_qty, 4),
                     average_cost=round(avg_cost, 4),
-                    realized_pl=round(currency_realized[currency], 2),
+                    realized_pl=round(total_realized_map[currency], 2),
                 )
             )
 
-        # Ensure stable ordering by currency value
+            for funding_group, record in groups.items():
+                qty = record["quantity"]
+                realized_value = group_realized_map[currency][funding_group]
+                avg_cost_group = record["total_cost"] / qty if qty else 0.0
+
+                if abs(qty) <= 1e-9 and abs(realized_value) <= 1e-2:
+                    continue
+
+                group_breakdown.append(
+                    PositionGroupBreakdown(
+                        funding_group=funding_group,
+                        currency=currency,
+                        quantity=round(qty, 4),
+                        average_cost=round(avg_cost_group, 4),
+                        realized_pl=round(realized_value, 2),
+                    )
+                )
+
         breakdown.sort(key=lambda item: item.currency.value)
+        group_breakdown.sort(key=lambda item: (item.currency.value, item.funding_group.lower()))
 
         positions.append(
             Position(
                 symbol=symbol,
                 market=markets[symbol],
                 breakdown=breakdown,
+                group_breakdown=group_breakdown,
             )
         )
     return positions

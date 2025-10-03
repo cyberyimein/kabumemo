@@ -172,7 +172,7 @@
                 <td colspan="9" class="empty">{{ t("transactions.empty") }}</td>
               </tr>
               <tr
-                v-for="tx in sortedTransactions"
+                v-for="tx in pagedTransactions"
                 :key="tx.id"
                 :class="['interactive-row', tx.quantity < 0 ? 'is-sell' : 'is-buy']"
                 tabindex="0"
@@ -212,6 +212,13 @@
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          v-if="transactionsTotalItems || transactionsTotalPages > 1"
+          :page="transactionsPage"
+          :total-pages="transactionsTotalPages"
+          :total-items="transactionsTotalItems"
+          @update:page="setTransactionsPage"
+        />
       </div>
     </div>
   </section>
@@ -230,6 +237,8 @@ import type {
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
 import BaseDatePicker from "./ui/BaseDatePicker.vue";
+import PaginationControls from "./ui/PaginationControls.vue";
+import { usePagination } from "@/composables/usePagination";
 
 const props = defineProps<{
   transactions: Transaction[];
@@ -343,6 +352,23 @@ watch(
 
 const sortedTransactions = computed(() =>
   [...props.transactions].sort((a, b) => (a.trade_date < b.trade_date ? 1 : -1))
+);
+
+const transactionsTotal = computed(() => props.transactions.length);
+const {
+  page: transactionsPage,
+  totalPages: transactionsTotalPages,
+  totalItems: transactionsTotalItems,
+  offset: transactionsOffset,
+  pageSize: transactionsPageSize,
+  setPage: setTransactionsPage,
+} = usePagination(transactionsTotal);
+
+const pagedTransactions = computed(() =>
+  sortedTransactions.value.slice(
+    transactionsOffset.value,
+    transactionsOffset.value + transactionsPageSize
+  )
 );
 
 function resetForm(): TransactionForm {
@@ -486,6 +512,7 @@ async function handleSubmit() {
         memo: normalizedMemo ?? undefined,
       };
       emit("create", createPayload);
+      setTransactionsPage(1);
       resetFormState();
     }
   } finally {
