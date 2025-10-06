@@ -4,7 +4,7 @@ import json
 import os
 from datetime import date
 from pathlib import Path
-from typing import Iterable, List
+from typing import Callable, Iterable, List, Sequence, TypeVar
 from uuid import uuid4
 
 from ..models.schemas import (
@@ -16,6 +16,10 @@ from ..models.schemas import (
     TransactionCreate,
     TaxSettlementRecord,
 )
+from .sqlite_storage import SQLiteStorage
+
+
+T = TypeVar("T")
 
 
 class LocalDataRepository:
@@ -37,10 +41,58 @@ class LocalDataRepository:
             if not path.exists():
                 path.write_text("[]", encoding="utf-8")
 
+        self.sqlite = SQLiteStorage(self.base_path / "kabumemo.db")
+        if not self.sqlite.has_data():
+            self._sync_sqlite_from_files()
+
+    def _sync_sqlite_from_files(self) -> None:
+        """Mirror current JSON files into SQLite storage."""
+        transactions = self.list_transactions()
+        groups = self.list_funding_groups()
+        settlements = self.list_tax_settlements()
+        self.sqlite.replace_transactions(transactions)
+        self.sqlite.replace_funding_groups(groups)
+        self.sqlite.replace_tax_settlements(settlements)
+
+    def sync_sqlite_from_json(self) -> None:
+        """Public helper to mirror JSON source data into SQLite."""
+        self._sync_sqlite_from_files()
+
+    def sqlite_has_data(self) -> bool:
+        return self.sqlite.has_data()
+
+    def _write_with_mirror(
+        self,
+        path: Path,
+        records: Iterable[T],
+        serializer: Callable[[T], dict],
+        mirror: Callable[[Sequence[T]], None],
+        restore_factory: Callable[[dict], T],
+    ) -> None:
+        items = list(records)
+        serialized = [serializer(item) for item in items]
+        previous_content = path.read_text(encoding="utf-8") if path.exists() else "[]"
+        try:
+            mirror(items)
+            path.write_text(
+                json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            try:
+                payload = json.loads(previous_content or "[]")
+                restore_items = [restore_factory(entry) for entry in payload]
+                mirror(restore_items)
+            except Exception:
+                pass
+            raise
+
     # Transactions -----------------------------------------------------------------
     def list_transactions(self) -> List[Transaction]:
         payload = json.loads(self._transactions_path.read_text(encoding="utf-8") or "[]")
         return [Transaction(**item) for item in payload]
+
+    def list_transactions_from_sqlite(self) -> List[Transaction]:
+        return self.sqlite.load_transactions()
 
     def get_transaction(self, transaction_id: str) -> Transaction:
         for transaction in self.list_transactions():
@@ -77,15 +129,21 @@ class LocalDataRepository:
             self._write_tax_settlements(filtered_settlements)
 
     def _write_transactions(self, transactions: Iterable[Transaction]) -> None:
-        serialized = [t.model_dump(mode="json") for t in transactions]
-        self._transactions_path.write_text(
-            json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
+        self._write_with_mirror(
+            self._transactions_path,
+            transactions,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_transactions,
+            lambda payload: Transaction(**payload),
         )
 
     # Funding groups ----------------------------------------------------------------
     def list_funding_groups(self) -> List[FundingGroup]:
         payload = json.loads(self._funding_groups_path.read_text(encoding="utf-8") or "[]")
         return [FundingGroup(**item) for item in payload]
+
+    def list_funding_groups_from_sqlite(self) -> List[FundingGroup]:
+        return self.sqlite.load_funding_groups()
 
     def get_funding_group(self, name: str) -> FundingGroup:
         for group in self.list_funding_groups():
@@ -118,9 +176,12 @@ class LocalDataRepository:
         self._write_funding_groups(filtered)
 
     def _write_funding_groups(self, groups: Iterable[FundingGroup]) -> None:
-        serialized = [g.model_dump(mode="json") for g in groups]
-        self._funding_groups_path.write_text(
-            json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
+        self._write_with_mirror(
+            self._funding_groups_path,
+            groups,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_funding_groups,
+            lambda payload: FundingGroup(**payload),
         )
 
     # Utility -----------------------------------------------------------------------
@@ -206,6 +267,9 @@ class LocalDataRepository:
             self._write_tax_settlements(records)
         return records
 
+    def list_tax_settlements_from_sqlite(self) -> list[TaxSettlementRecord]:
+        return self.sqlite.load_tax_settlements()
+
     def get_tax_settlement(self, settlement_id: str) -> TaxSettlementRecord:
         for record in self.list_tax_settlements():
             if record.id == settlement_id:
@@ -237,7 +301,10 @@ class LocalDataRepository:
         self._write_tax_settlements(updated)
 
     def _write_tax_settlements(self, settlements: Iterable[TaxSettlementRecord]) -> None:
-        serialized = [record.model_dump(mode="json") for record in settlements]
-        self._tax_settlements_path.write_text(
-            json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
+        self._write_with_mirror(
+            self._tax_settlements_path,
+            settlements,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_tax_settlements,
+            lambda payload: TaxSettlementRecord(**payload),
         )

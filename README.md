@@ -12,7 +12,7 @@ Kabumemo is an offline-friendly trading journal powered by a **Vue 3 + Vite fron
 
 - **Frontend UI**: A tabbed dashboard (Trades, Positions, Funds, Tax) that lets you enter and review data directly in the browser.
 - **Backend API**: Handles storage and business validation for transactions, funding groups, tax settlement, and exposes a unified REST interface.
-- **Data storage**: JSON files are stored under `data/` at the repository root, with optional overrides via environment variables.
+- **Data storage**: Every write is mirrored to both JSON files and a lightweight SQLite database (`kabumemo.db`) under `data/`, keeping human-editable backups and structured queries in sync.
 
 The repository already includes a one-click startup batch script and end-to-end delete functionality for trades. The sections below provide a complete usage guide and feature overview.
 
@@ -55,10 +55,14 @@ python -m venv .venv
 ./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-To override the data directory, set the `Kabumemo_DATA_DIR` environment variable:
+To override the data directory, set the `KABUCOUNT_DATA_DIR` environment variable:
 
 ```bash
-set Kabumemo_DATA_DIR=D:\Kabumemo-data
+# Windows (cmd / PowerShell)
+set KABUCOUNT_DATA_DIR=D:\Kabumemo-data
+
+# macOS / Linux
+export KABUCOUNT_DATA_DIR="$HOME/kabumemo-data"
 ```
 
 Run tests:
@@ -87,6 +91,25 @@ Default development endpoints:
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://127.0.0.1:8000`
+
+## Docker deployment (macOS-friendly)
+
+A `backend/Dockerfile` is now available for containerized runs. The image defaults to storing both JSON files and the SQLite database under `/data`, so bind-mount that directory to persist data outside the container (required on macOS because the container filesystem resets on restart).
+
+```bash
+cd backend
+docker build -t kabumemo-backend .
+docker run --rm -p 8000:8000 -v "$(pwd)/../data:/data" kabumemo-backend
+```
+
+To run the one-time JSON → SQLite import inside the container:
+
+```bash
+docker run --rm -it -v "$(pwd)/../data:/data" kabumemo-backend \
+  python scripts/import_json_to_sqlite.py --force
+```
+
+The FastAPI server listens on `0.0.0.0:8000` inside the container; the `-p` flag exposes it to the macOS host. Mounting `../data` keeps `transactions.json`, `funding_groups.json`, `tax_settlements.json`, and `kabumemo.db` up to date across restarts.
 
 ## Backend API Overview
 
@@ -134,7 +157,20 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 - `transactions.json`: Transaction history, created on first API use.
 - `funding_groups.json`: Funding group definitions; default JPY and USD groups are generated on first run.
 - `tax_settlements.json`: Maintained by the tax settlement API.
+- `kabumemo.db`: SQLite mirror that stays in lockstep with the JSON files and powers structured queries or external tooling.
 - `data/backups/`: Reserved for future backup tooling.
+
+### Maintenance scripts
+
+- `backend/scripts/import_json_to_sqlite.py`: Run once after upgrading to the dual-storage backend (or anytime you need to rebuild the database) to mirror JSON data into SQLite. Pass `--force` to overwrite existing tables.
+- `backend/scripts/check_data_sync.py`: Compares JSON and SQLite content; exits with a non-zero status when any record is missing or diverges. Combine with CI or cron to flag drift quickly.
+
+Example usage from the repository root:
+
+```bash
+python backend/scripts/import_json_to_sqlite.py --data-dir ./data
+python backend/scripts/check_data_sync.py --data-dir ./data --verbose
+```
 
 ## Roadmap
 
@@ -143,7 +179,14 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 - Provide backup/restore utilities (CSV/ZIP).
 - Explore packaging into a desktop shortcut or single-file binary.
 
-## Recent Work — 2025-10-03
+## Recent Work — 2025-10-07
+
+- **Dual storage rollout**: The repository now mirrors every write to both JSON and a SQLite database, with transactional safeguards in `LocalDataRepository` and helper accessors to query either source.
+- **Tooling refresh**: Added `import_json_to_sqlite.py` for one-time migrations and `check_data_sync.py` to catch drift between stores. Tests assert JSON/SQLite parity on critical workflows.
+- **Container pathway**: Introduced `backend/Dockerfile` plus documentation so the backend can run inside Docker on macOS with a bind-mounted `/data` volume.
+- **Docs & tests**: Updated the READMEs, clarified the `KABUCOUNT_DATA_DIR` override, and extended the pytest suite to validate SQLite mirroring during lifecycle flows.
+
+### 2025-10-03
 
 - **Positions analytics refresh**: The backend `analytics` service now computes per-funding-group breakdowns for each holding, with matching schema updates and regression tests to keep historical scenarios covered.
 - **UI expansion**: Positions rows can be expanded to reveal group-level metrics, providing quantity, cost, and realized P/L visibility without leaving the table.

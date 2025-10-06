@@ -12,7 +12,7 @@ Kabumemo 是一个可以离线使用的股票交易簿，采用 **Vue 3 + Vite �
 
 - **前端界面**：支持多标签页的仪表盘（交易、持仓、资金、纳税），可直接在浏览器完成录入与查询操作。
 - **后端 API**：负责存储与业务规则校验，包含交易、资金组、纳税等核心功能，并暴露统一的 REST 接口。
-- **数据存储**：默认使用仓库根目录下的 `data/` 保存 JSON 数据，可通过环境变量灵活切换。
+- **数据存储**：所有写入会同时更新 `data/` 下的 JSON 文件与轻量级 SQLite 数据库 `kabumemo.db`，既保留可手动编辑的备份，也提供结构化查询能力。
 
 仓库中已经集成「一键启动」批处理脚本与端到端删除交易功能，以下为完整的使用说明与能力概览。
 
@@ -59,6 +59,9 @@ python -m venv .venv
 
 ```bash
 set KABUCOUNT_DATA_DIR=D:\Kabumemo-data
+
+# macOS / Linux
+export KABUCOUNT_DATA_DIR="$HOME/kabumemo-data"
 ```
 
 运行测试：
@@ -84,6 +87,25 @@ npm run lint    # 可选：运行 ESLint
 ```
 
 默认开发环境地址：前端 `http://localhost:5173`，后端 `http://127.0.0.1:8000`。
+
+## Docker 部署（macOS 适用）
+
+`backend/Dockerfile` 已加入仓库，可直接构建后端镜像。镜像默认把 JSON 与 SQLite 数据库写入 `/data`，在 macOS 上请务必通过 bind mount 把本地 `data/` 挂载进去，这样容器重启后数据才会保留。
+
+```bash
+cd backend
+docker build -t kabumemo-backend .
+docker run --rm -p 8000:8000 -v "$(pwd)/../data:/data" kabumemo-backend
+```
+
+若需在容器内执行一次性的 JSON → SQLite 导入，可运行：
+
+```bash
+docker run --rm -it -v "$(pwd)/../data:/data" kabumemo-backend \
+  python scripts/import_json_to_sqlite.py --force
+```
+
+FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机。`../data` 挂载后，`transactions.json`、`funding_groups.json`、`tax_settlements.json` 与 `kabumemo.db` 会随容器同步更新。
 
 ## 后端 API 速览
 
@@ -134,7 +156,20 @@ npm run lint    # 可选：运行 ESLint
 - `transactions.json`：交易流水，后端在接收到首个请求时自动创建。
 - `funding_groups.json`：资金组配置，初次运行会生成「Default JPY / Default USD」。
 - `tax_settlements.json`：纳税记录，由纳税 API 自动维护。
+- `kabumemo.db`：SQLite 镜像，与 JSON 文件保持完全同步，可用于结构化查询或第三方分析工具。
 - `data/backups/`：预留备份目录，后续会提供导入导出脚本。
+
+### 维护脚本
+
+- `backend/scripts/import_json_to_sqlite.py`：升级到双存储结构后可执行一次，把现有 JSON 数据导入 SQLite；如需覆盖旧库可追加 `--force`。
+- `backend/scripts/check_data_sync.py`：校验 JSON 与 SQLite 是否一致；检测到缺失或差异时会返回非零退出码，可结合 CI/定时任务使用。
+
+示例命令（仓库根目录执行）：
+
+```bash
+python backend/scripts/import_json_to_sqlite.py --data-dir ./data
+python backend/scripts/check_data_sync.py --data-dir ./data --verbose
+```
 
 ## 后续规划
 
@@ -143,7 +178,14 @@ npm run lint    # 可选：运行 ESLint
 - 提供数据备份/恢复工具（CSV/ZIP）。
 - 引入桌面快捷入口或单文件打包方案。
 
-## 今日更新 · 2025-10-03
+## 今日更新 · 2025-10-07
+
+- **双存储上线**：`LocalDataRepository` 在 JSON 写入的同时同步刷新 SQLite，新增容错逻辑并提供直接读取 SQLite 的辅助方法。
+- **脚本工具**：新增 `import_json_to_sqlite.py` 与 `check_data_sync.py`，分别用于一键导入和校验两边数据是否一致；pytest 用例覆盖 JSON/SQLite 的同步场景。
+- **容器支持**：提供 `backend/Dockerfile` 与文档说明，确保在 macOS 上通过 Docker 跑后端时 `/data` 挂载即可保留 JSON 与 SQLite 文件。
+- **文档与测试**：更新中英文 README，修正 `KABUCOUNT_DATA_DIR` 用法，测试中增加 SQLite 镜像一致性的断言。
+
+### 2025-10-03
 
 - **持仓分析升级**：后端 `analytics` 服务计算每个持仓的资金组拆分，`schemas` 与测试同步调整，保证旧有用例依旧可靠。
 - **界面可视化**：持仓表支持展开查看资金组数量、成本与已实现盈亏，信息密度进一步提升。

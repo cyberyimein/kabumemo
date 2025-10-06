@@ -25,14 +25,29 @@ def client(tmp_path, monkeypatch):
     repository.ensure_default_groups()
     routes.repository = repository
 
-    return TestClient(app)
+    test_client = TestClient(app)
+    setattr(test_client, "repository", repository)
+    return test_client
 
 
 def test_transaction_lifecycle(client: TestClient):
+    repository = getattr(client, "repository")
+
     resp = client.get("/api/funding-groups")
     assert resp.status_code == 200
     groups = resp.json()
     assert any(group["name"] == "Default JPY" for group in groups)
+
+    def dump_groups(models):
+        return sorted(
+            [model.model_dump(mode="json") for model in models],
+            key=lambda item: item["name"],
+        )
+
+    assert repository.sqlite_has_data()
+    assert dump_groups(repository.list_funding_groups()) == dump_groups(
+        repository.list_funding_groups_from_sqlite()
+    )
 
     buy_payload = {
         "trade_date": "2025-09-01",
@@ -184,6 +199,25 @@ def test_transaction_lifecycle(client: TestClient):
     settlements_list = client.get("/api/tax/settlements").json()
     assert any(item["id"] == settlement_id for item in settlements_list)
 
+    def dump_transactions(models):
+        return sorted(
+            [model.model_dump(mode="json") for model in models],
+            key=lambda item: item["id"],
+        )
+
+    def dump_settlements(models):
+        return sorted(
+            [model.model_dump(mode="json") for model in models],
+            key=lambda item: (item["recorded_at"], item["id"]),
+        )
+
+    assert dump_transactions(repository.list_transactions()) == dump_transactions(
+        repository.list_transactions_from_sqlite()
+    )
+    assert dump_settlements(repository.list_tax_settlements()) == dump_settlements(
+        repository.list_tax_settlements_from_sqlite()
+    )
+
     delete_resp = client.delete(f"/api/transactions/{sale_id}")
     assert delete_resp.status_code == 204
 
@@ -192,6 +226,13 @@ def test_transaction_lifecycle(client: TestClient):
 
     remaining_settlements = client.get("/api/tax/settlements").json()
     assert all(item["transaction_id"] != sale_id for item in remaining_settlements)
+
+    assert dump_transactions(repository.list_transactions()) == dump_transactions(
+        repository.list_transactions_from_sqlite()
+    )
+    assert dump_settlements(repository.list_tax_settlements()) == dump_settlements(
+        repository.list_tax_settlements_from_sqlite()
+    )
 
     positions_after_delete = client.get("/api/positions").json()
     post_delete_breakdown = positions_after_delete[0]["breakdown"][0]
