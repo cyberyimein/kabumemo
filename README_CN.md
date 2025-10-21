@@ -46,6 +46,18 @@ Kabumemo/
 
 > 提示：脚本采用 UTF-8 输出，若只需在命令行运行可使用 `start_kabumemo.bat --no-pause` 跳过最后的暂停提示。
 
+### 模拟部署版启动脚本（Windows）
+
+执行 `start_kabumemo_prod.bat` 可以模拟真实部署流程：
+
+1. 检查/创建后端虚拟环境并安装依赖。
+2. 若缺失 `node_modules` 则执行 `npm install`，随后运行 `npm run build` 生成 `frontend/dist`。
+3. 以无自动重载模式启动 Uvicorn；FastAPI 会在 `/` 路径挂载 `frontend/dist`，同时保留 `/api` 接口。默认绑定地址为 `0.0.0.0`，方便同一局域网内其它设备访问，同时控制台仍会提示可点击的 `http://127.0.0.1:8000` 供本机调试。若需绑定到其他地址，可在运行前设置 `KABUMEMO_HOST`。
+
+脚本结束后窗口会保持打开，以便查看日志；如需自动退出，可附加参数 `--no-pause`。
+
+终止服务时直接在窗口按 `Ctrl+C`。再次运行脚本会在启动前重新构建静态资源。
+
 ### 手动启动后端
 
 ```bash

@@ -46,6 +46,35 @@ Run `start_kabumemo.bat` from the repository root—double-click or launch it in
 
 > Heads-up: The script uses UTF-8 output. When running from a shell, you can pass `--no-pause` to skip the final pause prompt.
 
+### Simulate a production run (Windows)
+
+Use `start_kabumemo_prod.bat` when you want to mimic a deployment build:
+
+1. Ensure the backend virtual environment exists and install dependencies if missing.
+2. Run `npm install` if needed and execute `npm run build` to emit `frontend/dist`.
+3. Launch Uvicorn without auto-reload; FastAPI mounts `frontend/dist` at `/`, serving the compiled SPA alongside the `/api` endpoints. The server binds to `0.0.0.0` by default so other devices on your LAN can reach it, while the console still prints a clickable `http://127.0.0.1:8000` hint for local testing. Set `KABUMEMO_HOST` to another address if you need a different binding.
+
+The console window stays open after shutdown so you can review logs; pass `--no-pause` if you want it to exit immediately.
+
+Press `Ctrl+C` in the console to stop the server. Rerunning the script overwrites the existing `frontend/dist` output before starting the backend.
+
+#### Choosing the Python interpreter for the virtualenv
+
+Both batch scripts try, in order, to use:
+
+1. A path you set via `KABUMEMO_BASE_PY`.
+2. The Python that ships with `mamba`’s base environment (`mamba info --base`).
+3. The first `python` available on your `PATH`.
+
+If you want to pin the interpreter explicitly (for example, to mamba’s base env on Windows), set the environment variable before launching the script:
+
+```bat
+set KABUMEMO_BASE_PY=C:\mambaforge\python.exe
+start_kabumemo_prod.bat --no-pause
+```
+
+The scripts log which interpreter they detected, so you can confirm the correct one is used when `.venv` is created.
+
 ### Start the backend manually
 
 ```bash

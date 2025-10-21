@@ -14,6 +14,12 @@ cd /d "%ROOT%"
 
 set "BACKEND_DIR=%ROOT%backend"
 set "FRONTEND_DIR=%ROOT%frontend"
+set "DIST_DIR=%FRONTEND_DIR%\dist"
+set "SERVER_HOST=%KABUMEMO_HOST%"
+if not defined SERVER_HOST set "SERVER_HOST=0.0.0.0"
+set "SERVER_URL=http://%SERVER_HOST%:8000"
+set "SERVER_HINT=%SERVER_URL%"
+if /i "%SERVER_HOST%"=="0.0.0.0" set "SERVER_HINT=http://127.0.0.1:8000"
 set "BACKEND_VENV=%BACKEND_DIR%\.venv"
 set "BACKEND_SCRIPTS=%BACKEND_VENV%\Scripts"
 set "BACKEND_PY=%BACKEND_SCRIPTS%\python.exe"
@@ -23,24 +29,25 @@ set "MAMBA_EXE="
 set "MAMBA_BASE="
 set "ERROR_FLAG=0"
 
-echo =============================================
-echo   Kabumemo 開発環境起動バッチ
-echo =============================================
-
-echo プロジェクトルート: %ROOT%
-
 if not exist "%BACKEND_DIR%" (
     echo [ERROR] backend ディレクトリが見つかりません: %BACKEND_DIR%
     set "ERROR_FLAG=1"
-    goto :pause_and_exit
+    goto :cleanup
 )
 
 if not exist "%FRONTEND_DIR%" (
     echo [ERROR] frontend ディレクトリが見つかりません: %FRONTEND_DIR%
     set "ERROR_FLAG=1"
-    goto :pause_and_exit
+    goto :cleanup
 )
 
+echo =============================================
+echo   Kabumemo デプロイモード起動バッチ
+echo =============================================
+
+echo プロジェクトルート: %ROOT%
+
+echo.
 call :select_bootstrap_python
 if not defined BOOTSTRAP_PY (
     set "BOOTSTRAP_PY=python"
@@ -48,16 +55,34 @@ if not defined BOOTSTRAP_PY (
 )
 echo [Backend] 仮想環境ブートストラップ Python: !BOOTSTRAP_SOURCE! -> !BOOTSTRAP_PY!
 
-call :setup_backend || goto :error
-call :setup_frontend || goto :error
+call :ensure_backend || goto :error
+
+if not exist "%BACKEND_PY%" (
+    echo [Backend] 仮想環境の python が見つかりません: %BACKEND_PY%
+    set "ERROR_FLAG=1"
+    goto :cleanup
+)
+
+set "VIRTUAL_ENV=%BACKEND_VENV%"
+set "PATH=%BACKEND_SCRIPTS%;%PATH%"
+set "PYTHONHOME="
+echo [Backend] 仮想環境を有効化しました: %BACKEND_PY%
+
+call :build_frontend || goto :error
 
 echo.
-echo Backend: http://127.0.0.1:8000/
-echo Frontend: http://localhost:5173/
-echo ログはそれぞれの新しいコマンドウィンドウで確認・停止できます。
-goto :pause_and_exit
+echo [Server] フロントエンド dist ディレクトリがあれば FastAPI から配信します！
+echo [Server] アクセス URL: !SERVER_HINT!
+echo [Server] Uvicorn を起動しています ^(Ctrl+C で停止^)...
+echo.
+set "KABUMEMO_DIST_DIR=%DIST_DIR%"
+pushd "%BACKEND_DIR%" >nul 2>&1
+"%BACKEND_PY%" -m uvicorn app.main:app --host %SERVER_HOST% --port 8000
+set "ERROR_FLAG=%ERRORLEVEL%"
+popd >nul 2>&1
+goto :cleanup
 
-:setup_backend
+:ensure_backend
     pushd "%BACKEND_DIR%" >nul 2>&1 || exit /b 1
     echo [Backend] Python 仮想環境を確認します...
     if not exist "%BACKEND_PY%" (
@@ -67,36 +92,11 @@ goto :pause_and_exit
     echo [Backend] 依存関係を確認します...
     if not exist "%BACKEND_SCRIPTS%\uvicorn.exe" (
         echo [Backend] 依存関係をインストールします...
-        "%BACKEND_PY%" -m pip install --upgrade pip setuptools || (popd >nul 2>&1 & exit /b 1)
+        "%BACKEND_PY%" -m pip install --upgrade pip setuptools wheel || (popd >nul 2>&1 & exit /b 1)
         "%BACKEND_PY%" -m pip install . || (popd >nul 2>&1 & exit /b 1)
     ) else (
         echo [Backend] 依存関係は既にインストールされています。
     )
-    if not exist "%BACKEND_PY%" (
-        echo [Backend] 仮想環境の python が見つかりません: %BACKEND_PY%
-        popd >nul 2>&1
-        exit /b 1
-    )
-    set "VIRTUAL_ENV=%BACKEND_VENV%"
-    set "PATH=%BACKEND_SCRIPTS%;%PATH%"
-    set "PYTHONHOME="
-    echo [Backend] 仮想環境を有効化しました: %BACKEND_PY%
-    echo [Backend] サーバーを起動します...
-    start "Kabumemo Backend" cmd /k "cd /d ""%BACKEND_DIR%"" && ""%BACKEND_PY%"" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
-    popd >nul 2>&1
-    exit /b 0
-
-:setup_frontend
-    pushd "%FRONTEND_DIR%" >nul 2>&1 || exit /b 1
-    echo [Frontend] 依存関係を確認します...
-    if not exist "node_modules" (
-        echo [Frontend] npm install を実行します...
-        call npm install --no-audit --no-fund || (popd >nul 2>&1 & exit /b 1)
-    ) else (
-        echo [Frontend] node_modules が見つかりました。インストールをスキップします。
-    )
-    echo [Frontend] 開発サーバーを起動します...
-    start "Kabumemo Frontend" cmd /k "cd /d ""%FRONTEND_DIR%"" && npm run dev"
     popd >nul 2>&1
     exit /b 0
 
@@ -128,22 +128,44 @@ goto :pause_and_exit
     )
     goto :eof
 
+:build_frontend
+    pushd "%FRONTEND_DIR%" >nul 2>&1 || exit /b 1
+    echo [Frontend] 依存関係を確認します...
+    if not exist "node_modules" (
+        echo [Frontend] npm install を実行します...
+        call npm install --no-audit --no-fund || (popd >nul 2>&1 & exit /b 1)
+    ) else (
+        echo [Frontend] node_modules が見つかりました。インストールをスキップします。
+    )
+    echo [Frontend] 静的アセットをビルドします...
+    call npm run build || (popd >nul 2>&1 & exit /b 1)
+    if not exist "dist" (
+        echo [Frontend][WARN] dist ディレクトリが生成されませんでした。
+        popd >nul 2>&1
+        exit /b 1
+    ) else (
+        echo [Frontend] dist ディレクトリ: %DIST_DIR%
+    )
+    popd >nul 2>&1
+    exit /b 0
+
 :error
 set "ERROR_FLAG=1"
 
 echo.
-echo [ERROR] 起動処理の途中でエラーが発生しました。上記ログを確認してください。
+echo [ERROR] 実行中にエラーが発生しました。上記ログを確認してください。
 
-goto :pause_and_exit
+goto :cleanup
 
-:pause_and_exit
+:cleanup
 echo.
 if "%ERROR_FLAG%"=="0" (
-    echo すべての処理が完了しました。サービス終了時は各ウィンドウで ^C を押してください。
+    echo [Server] 正常終了しました。ウィンドウを閉じるには Ctrl+C で停止してください。
 ) else (
-    echo エラーが発生しました。必要に応じてウィンドウを確認し、再実行してください。
+    echo [Server] エラーが発生しました。必要に応じてログを確認してください。
 )
 if "%SKIP_PAUSE%"=="0" (
+    echo.
     pause
 )
 if defined ORIGINAL_CP chcp %ORIGINAL_CP% >nul
