@@ -118,6 +118,47 @@
     },
     "confirm": {
       "delete": "取引 {symbol}（{date}）を削除しますか？"
+    },
+    "roundYield": {
+      "enter": "ラウンド収益率",
+      "calculate": "計算",
+      "cancel": "キャンセル",
+      "close": "閉じる",
+      "selectionSummary": "{count} 件選択 · 全 {total} 件",
+      "selectionHint": "複数ページに跨って売買を選択し、一巡の収益率を計算できます。",
+      "buyCount": "買い取引 {count} 件",
+      "sellCount": "売り取引 {count} 件",
+      "netQuantity": "数量合計: {quantity}",
+      "genericError": "選択した取引の収益率を計算できませんでした。",
+      "validation": {
+        "minimum": "少なくとも 2 件の取引を選択してください。",
+        "symbol": "同じ銘柄の取引を選択してください。",
+        "fundingGroup": "同じ資金グループの取引を選択してください。",
+        "market": "同じ市場の取引を選択してください。",
+        "currency": "同じ資金通貨の取引を選択してください。",
+        "netQuantityMismatch": "選択した数量の合計を 0 にしてください（現在 {quantity}）。"
+      },
+      "table": {
+        "select": "選択",
+        "selectRow": "{date} の {symbol} を選択"
+      },
+      "dialogTitle": "一巡収益率",
+      "dialogSummary": "{symbol} · {group}（{currency}）",
+      "metrics": {
+        "totalBuy": "買付総額",
+        "totalSell": "売却総額",
+        "grossProfit": "税引前利益",
+        "taxTotal": "納税額",
+        "netProfit": "税引後利益",
+        "return": "収益率",
+        "returnAfterTax": "税後収益率",
+        "annualized": "年率換算",
+        "annualizedAfterTax": "年率換算（税後）",
+        "holdingDays": "保有日数",
+        "windowStart": "最初の取引",
+        "windowEnd": "最後の取引"
+      },
+      "holdingDaysValue": "{days} 日"
     }
   },
   "positions": {

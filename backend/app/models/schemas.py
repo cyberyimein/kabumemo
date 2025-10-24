@@ -177,5 +177,42 @@ class TaxSettlementUpdate(BaseModel):
     exchange_rate: Optional[float] = Field(default=None, gt=0.0)
 
 
+class RoundTripYieldRequest(BaseModel):
+    transaction_ids: list[str] = Field(..., min_length=2)
+
+    @field_validator("transaction_ids")
+    @classmethod
+    def ensure_unique_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if len(normalized) < 2:
+            raise ValueError("At least two transaction ids are required")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Duplicate transaction ids are not allowed")
+        return normalized
+
+
+class RoundTripYieldResponse(BaseModel):
+    symbol: str
+    funding_group: str
+    market: Market
+    cash_currency: Currency
+    transaction_ids: list[str]
+    trade_count: int
+    total_buy_quantity: float
+    total_sell_quantity: float
+    total_buy_amount: float
+    total_sell_amount: float
+    gross_profit: float
+    tax_total: float
+    net_profit: float
+    return_ratio: float | None
+    return_after_tax: float | None
+    annualized_return: float | None
+    annualized_return_after_tax: float | None
+    holding_days: int
+    trade_window_start: date
+    trade_window_end: date
+
+
 class HealthResponse(BaseModel):
     status: str

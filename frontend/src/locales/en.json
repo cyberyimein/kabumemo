@@ -118,6 +118,47 @@
     },
     "confirm": {
       "delete": "Delete the trade {symbol} on {date}?"
+    },
+    "roundYield": {
+      "enter": "Round Yield",
+      "calculate": "Calculate",
+      "cancel": "Cancel",
+      "close": "Close",
+      "selectionSummary": "{count} selected · {total} total",
+      "selectionHint": "Pick buys and sells across pages to evaluate a full round trip.",
+      "buyCount": "{count} buy trades",
+      "sellCount": "{count} sell trades",
+      "netQuantity": "Net quantity: {quantity}",
+      "genericError": "Unable to calculate yield for the selected trades.",
+      "validation": {
+        "minimum": "Select at least two trades to calculate.",
+        "symbol": "Select trades with the same symbol.",
+        "fundingGroup": "Select trades from the same funding group.",
+        "market": "Select trades from the same market.",
+        "currency": "Select trades using the same cash currency.",
+        "netQuantityMismatch": "Trades must net to zero quantity (current net: {quantity})."
+      },
+      "table": {
+        "select": "Select",
+        "selectRow": "Select trade {symbol} on {date}"
+      },
+      "dialogTitle": "Round Trip Yield",
+      "dialogSummary": "{symbol} · {group} ({currency})",
+      "metrics": {
+        "totalBuy": "Total Buys",
+        "totalSell": "Total Sells",
+        "grossProfit": "Gross Profit",
+        "taxTotal": "Tax Paid",
+        "netProfit": "Net Profit",
+        "return": "Return",
+        "returnAfterTax": "After-Tax Return",
+        "annualized": "Annualized Return",
+        "annualizedAfterTax": "Annualized After-Tax Return",
+        "holdingDays": "Holding Days",
+        "windowStart": "First Trade",
+        "windowEnd": "Last Trade"
+      },
+      "holdingDaysValue": "{days, plural, one {# day} other {# days}}"
     }
   },
   "positions": {

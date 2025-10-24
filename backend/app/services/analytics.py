@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
+from math import isclose
 from typing import Iterable
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from ..models.schemas import (
     Position,
     PositionBreakdown,
     PositionGroupBreakdown,
+    RoundTripYieldResponse,
     TaxSettlementRecord,
     TaxSettlementRequest,
     TaxSettlementUpdate,
@@ -377,3 +379,102 @@ def delete_tax_settlement(
     record = repo.get_tax_settlement(settlement_id)
     repo.delete_tax_settlement(settlement_id)
     repo.mark_transaction_untaxed(record.transaction_id)
+
+
+def compute_round_trip_yield(
+    transactions: Iterable[Transaction],
+    settlements: Iterable[TaxSettlementRecord],
+) -> RoundTripYieldResponse:
+    selected = sorted(
+        list(transactions),
+        key=lambda tx: (tx.trade_date, tx.id),
+    )
+    if not selected:
+        raise ValueError("No transactions selected for yield calculation")
+
+    symbol = selected[0].symbol
+    funding_group = selected[0].funding_group
+    market = selected[0].market
+    currency = selected[0].cash_currency
+
+    for tx in selected:
+        if tx.symbol != symbol:
+            raise ValueError("Selected transactions must share the same symbol")
+        if tx.funding_group != funding_group:
+            raise ValueError("Selected transactions must use the same funding group")
+        if tx.market != market:
+            raise ValueError("Selected transactions must belong to the same market")
+        if tx.cash_currency != currency:
+            raise ValueError("Selected transactions must share the same currency")
+
+    total_quantity = sum(tx.quantity for tx in selected)
+    if not isclose(total_quantity, 0.0, abs_tol=1e-6):
+        raise ValueError("Selected transactions do not net to zero quantity")
+
+    buys = [tx for tx in selected if tx.quantity > 0]
+    sells = [tx for tx in selected if tx.quantity < 0]
+    if not buys or not sells:
+        raise ValueError("A valid round trip requires at least one buy and one sell")
+
+    total_buy_quantity = sum(tx.quantity for tx in buys)
+    total_sell_quantity = sum(-tx.quantity for tx in sells)
+    total_buy_amount = sum(tx.gross_amount for tx in buys)
+    total_sell_amount = sum(tx.gross_amount for tx in sells)
+
+    if total_buy_amount <= 0:
+        raise ValueError("Total buy amount must be greater than zero")
+
+    gross_profit = total_sell_amount - total_buy_amount
+
+    settlements_by_tx: dict[str, float] = defaultdict(float)
+    for record in settlements:
+        settlements_by_tx[record.transaction_id] += record.amount
+
+    tax_total = sum(settlements_by_tx.get(tx.id, 0.0) for tx in selected)
+    net_profit = gross_profit - tax_total
+
+    return_ratio = gross_profit / total_buy_amount
+    return_after_tax = net_profit / total_buy_amount
+
+    start_date = min(tx.trade_date for tx in selected)
+    end_date = max(tx.trade_date for tx in selected)
+    raw_holding_days = (end_date - start_date).days
+    effective_holding_days = max(raw_holding_days, 1)
+
+    def annualize(ratio: float) -> float | None:
+        base = 1.0 + ratio
+        if base <= 0:
+            return None
+        exponent = 365 / effective_holding_days
+        return pow(base, exponent) - 1
+
+    annualized_return = annualize(return_ratio)
+    annualized_return_after_tax = annualize(return_after_tax)
+
+    def normalize_ratio(value: float | None) -> float | None:
+        if value is None:
+            return None
+        return round(value, 6)
+
+    return RoundTripYieldResponse(
+        symbol=symbol,
+        funding_group=funding_group,
+        market=market,
+        cash_currency=currency,
+        transaction_ids=[tx.id for tx in selected],
+        trade_count=len(selected),
+        total_buy_quantity=round(total_buy_quantity, 6),
+        total_sell_quantity=round(total_sell_quantity, 6),
+        total_buy_amount=round(total_buy_amount, 2),
+        total_sell_amount=round(total_sell_amount, 2),
+        gross_profit=round(gross_profit, 2),
+        tax_total=round(tax_total, 2),
+        net_profit=round(net_profit, 2),
+        return_ratio=normalize_ratio(return_ratio),
+        return_after_tax=normalize_ratio(return_after_tax),
+        annualized_return=normalize_ratio(annualized_return),
+        annualized_return_after_tax=normalize_ratio(annualized_return_after_tax),
+        holding_days=raw_holding_days,
+        trade_window_start=start_date,
+        trade_window_end=end_date,
+    )

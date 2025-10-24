@@ -5,13 +5,88 @@
         <h2>{{ t("transactions.title") }}</h2>
         <p>{{ t("transactions.description") }}</p>
       </div>
-      <button type="button" class="refresh-button" @click="$emit('refresh')">
-        {{ t("common.actions.refresh") }}
-      </button>
+      <div class="header-actions">
+        <template v-if="roundYieldMode">
+          <button
+            type="button"
+            class="ghost-button header-button"
+            :disabled="calculatingYield"
+            @click="exitRoundYieldMode"
+          >
+            {{ t("transactions.roundYield.cancel") }}
+          </button>
+          <button
+            type="button"
+            class="primary-btn header-button header-button--primary"
+            :disabled="calculatingYield"
+            :aria-disabled="!canCalculateYield"
+            @click="handleCalculateYield"
+          >
+            <span v-if="calculatingYield" class="spinner-inline"></span>
+            {{ t("transactions.roundYield.calculate") }}
+          </button>
+        </template>
+        <button
+          v-else
+          type="button"
+          class="ghost-button header-button"
+          @click="enterRoundYieldMode"
+        >
+          {{ t("transactions.roundYield.enter") }}
+        </button>
+        <button type="button" class="refresh-button header-button" @click="$emit('refresh')">
+          {{ t("common.actions.refresh") }}
+        </button>
+      </div>
     </header>
 
     <div class="panel-grid">
-      <form class="surface" @submit.prevent="handleSubmit">
+      <div class="form-column">
+        <transition name="summary-fade">
+          <div
+            v-if="roundYieldMode"
+            class="round-yield-summary"
+            role="region"
+            :aria-live="hasAttemptedYield ? 'assertive' : 'polite'"
+          >
+            <p>
+              {{
+                t("transactions.roundYield.selectionSummary", {
+                  count: selectedTransactionCount,
+                  total: transactions.length,
+                })
+              }}
+            </p>
+            <p class="hint">
+              {{ t("transactions.roundYield.selectionHint") }}
+            </p>
+            <ul v-if="selectedTransactionCount" class="selection-breakdown">
+              <li>
+                {{ t("transactions.roundYield.buyCount", { count: selectedBuyCount }) }}
+              </li>
+              <li>
+                {{ t("transactions.roundYield.sellCount", { count: selectedSellCount }) }}
+              </li>
+              <li>
+                {{
+                  t("transactions.roundYield.netQuantity", {
+                    quantity: formatNumber(selectedNetQuantity),
+                  })
+                }}
+              </li>
+            </ul>
+            <ul v-if="hasAttemptedYield && selectionIssues.length" class="selection-issues">
+              <li v-for="issue in selectionIssues" :key="issue">
+                {{ issue }}
+              </li>
+            </ul>
+            <p v-if="hasAttemptedYield && yieldError" class="error-banner">
+              {{ yieldError }}
+            </p>
+          </div>
+        </transition>
+
+        <form class="surface" @submit.prevent="handleSubmit">
         <h3>
           {{
             isEditing
@@ -148,7 +223,8 @@
             }}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
 
       <div class="surface">
         <h3>{{ t("transactions.historyTitle", { count: transactions.length }) }}</h3>
@@ -156,6 +232,9 @@
           <table>
             <thead>
               <tr>
+                <th v-if="roundYieldMode" class="select-column">
+                  {{ t("transactions.roundYield.table.select") }}
+                </th>
                 <th>{{ t("transactions.table.date") }}</th>
                 <th>{{ t("transactions.table.symbol") }}</th>
                 <th class="numeric">{{ t("transactions.table.quantity") }}</th>
@@ -169,17 +248,31 @@
             </thead>
             <tbody>
               <tr v-if="!transactions.length">
-                <td colspan="9" class="empty">{{ t("transactions.empty") }}</td>
+                <td :colspan="roundYieldMode ? 10 : 9" class="empty">
+                  {{ t("transactions.empty") }}
+                </td>
               </tr>
               <tr
                 v-for="tx in pagedTransactions"
                 :key="tx.id"
-                :class="['interactive-row', tx.quantity < 0 ? 'is-sell' : 'is-buy']"
+                :class="[
+                  'interactive-row',
+                  tx.quantity < 0 ? 'is-sell' : 'is-buy',
+                  { 'is-selected': isSelected(tx.id), 'selection-mode': roundYieldMode }
+                ]"
                 tabindex="0"
-                @click="prefillFromTransaction(tx)"
-                @keydown.enter.prevent="prefillFromTransaction(tx)"
-                @keydown.space.prevent="prefillFromTransaction(tx)"
+                @click="handleRowActivation(tx)"
+                @keydown.enter.prevent="handleRowActivation(tx)"
+                @keydown.space.prevent="handleRowActivation(tx)"
               >
+                <td v-if="roundYieldMode" class="select-column" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="isSelected(tx.id)"
+                    :aria-label="t('transactions.roundYield.table.selectRow', { symbol: tx.symbol, date: tx.trade_date })"
+                    @change="toggleSelection(tx.id)"
+                  />
+                </td>
                 <td>{{ tx.trade_date }}</td>
                 <td>{{ tx.symbol }}</td>
                 <td :class="['numeric', { negative: tx.quantity < 0, positive: tx.quantity > 0 }]">
@@ -222,6 +315,90 @@
       </div>
     </div>
   </section>
+
+  <div
+    v-if="yieldResult"
+    class="modal-backdrop"
+    role="dialog"
+    :aria-label="t('transactions.roundYield.dialogTitle')"
+    aria-modal="true"
+    @click.self="closeYieldResult"
+  >
+    <div class="modal-panel" tabindex="-1">
+      <header class="modal-header">
+        <h3>{{ t("transactions.roundYield.dialogTitle") }}</h3>
+        <button type="button" class="ghost-button" @click="closeYieldResult">
+          {{ t("transactions.roundYield.close") }}
+        </button>
+      </header>
+      <section class="modal-body">
+        <p class="modal-intro">
+          {{
+            t("transactions.roundYield.dialogSummary", {
+              symbol: yieldResult.symbol,
+              group: yieldResult.funding_group,
+              currency: yieldResult.cash_currency,
+            })
+          }}
+        </p>
+        <dl class="metrics-grid">
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.totalBuy") }}</dt>
+            <dd>{{ formatCurrency(yieldResult.total_buy_amount, yieldResult.cash_currency) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.totalSell") }}</dt>
+            <dd>{{ formatCurrency(yieldResult.total_sell_amount, yieldResult.cash_currency) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.grossProfit") }}</dt>
+            <dd>{{ formatCurrency(yieldResult.gross_profit, yieldResult.cash_currency) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.netProfit") }}</dt>
+            <dd>{{ formatCurrency(yieldResult.net_profit, yieldResult.cash_currency) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.return") }}</dt>
+            <dd>{{ formatPercent(yieldResult.return_ratio) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.returnAfterTax") }}</dt>
+            <dd>{{ formatPercent(yieldResult.return_after_tax) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.annualized") }}</dt>
+            <dd>{{ formatPercent(yieldResult.annualized_return) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.annualizedAfterTax") }}</dt>
+            <dd>{{ formatPercent(yieldResult.annualized_return_after_tax) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.holdingDays") }}</dt>
+            <dd>{{ t("transactions.roundYield.holdingDaysValue", { days: yieldResult.holding_days }) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.taxTotal") }}</dt>
+            <dd>{{ formatCurrency(yieldResult.tax_total, yieldResult.cash_currency) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.windowStart") }}</dt>
+            <dd>{{ yieldResult.trade_window_start }}</dd>
+          </div>
+          <div>
+            <dt>{{ t("transactions.roundYield.metrics.windowEnd") }}</dt>
+            <dd>{{ yieldResult.trade_window_end }}</dd>
+          </div>
+        </dl>
+      </section>
+      <footer class="modal-footer">
+        <button type="button" class="primary-btn" @click="closeYieldResult">
+          {{ t("transactions.roundYield.close") }}
+        </button>
+      </footer>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -234,11 +411,13 @@ import type {
   Transaction,
   TransactionCreate,
   TransactionUpdate,
+  RoundTripYieldResponse,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
 import BaseDatePicker from "./ui/BaseDatePicker.vue";
 import PaginationControls from "./ui/PaginationControls.vue";
 import { usePagination } from "@/composables/usePagination";
+import { ApiError, calculateRoundYield } from "@/services/api";
 
 const props = defineProps<{
   transactions: Transaction[];
@@ -256,14 +435,96 @@ const emit = defineEmits<{
   (e: "refresh"): void;
   (e: "delete", id: string): void;
   (e: "update", payload: UpdateEventPayload): void;
+  (
+    e: "notify",
+    payload: { type: "success" | "error" | "info"; message: string }
+  ): void;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const pending = ref(false);
 const tradeType = ref<"buy" | "sell">("buy");
 const editingId = ref<string | null>(null);
 const isEditing = computed(() => editingId.value !== null);
+
+const roundYieldMode = ref(false);
+const selectedTransactionIds = ref<string[]>([]);
+const calculatingYield = ref(false);
+const yieldError = ref<string | null>(null);
+const yieldResult = ref<RoundTripYieldResponse | null>(null);
+const hasAttemptedYield = ref(false);
+
+const selectedTransactionCount = computed(() => selectedTransactionIds.value.length);
+
+const transactionLookup = computed(() => {
+  const map = new Map<string, Transaction>();
+  for (const tx of props.transactions) {
+    map.set(tx.id, tx);
+  }
+  return map;
+});
+
+const selectedTransactions = computed(() =>
+  selectedTransactionIds.value
+    .map((id) => transactionLookup.value.get(id))
+    .filter((item): item is Transaction => Boolean(item))
+);
+
+const selectedBuyCount = computed(() =>
+  selectedTransactions.value.filter((tx) => tx.quantity > 0).length
+);
+
+const selectedSellCount = computed(() =>
+  selectedTransactions.value.filter((tx) => tx.quantity < 0).length
+);
+
+const selectedNetQuantity = computed(() =>
+  selectedTransactions.value.reduce((sum, tx) => sum + tx.quantity, 0)
+);
+
+const selectionIssues = computed(() => {
+  const issues: string[] = [];
+  const txs = selectedTransactions.value;
+  if (txs.length < 2) {
+    issues.push(t("transactions.roundYield.validation.minimum"));
+    return issues;
+  }
+
+  const symbols = new Set(txs.map((tx) => tx.symbol));
+  if (symbols.size > 1) {
+    issues.push(t("transactions.roundYield.validation.symbol"));
+  }
+
+  const groups = new Set(txs.map((tx) => tx.funding_group));
+  if (groups.size > 1) {
+    issues.push(t("transactions.roundYield.validation.fundingGroup"));
+  }
+
+  const markets = new Set(txs.map((tx) => tx.market));
+  if (markets.size > 1) {
+    issues.push(t("transactions.roundYield.validation.market"));
+  }
+
+  const currencies = new Set(txs.map((tx) => tx.cash_currency));
+  if (currencies.size > 1) {
+    issues.push(t("transactions.roundYield.validation.currency"));
+  }
+
+  const netQuantity = selectedNetQuantity.value;
+  if (Math.abs(netQuantity) > 1e-6) {
+    issues.push(
+      t("transactions.roundYield.validation.netQuantityMismatch", {
+        quantity: formatNumber(netQuantity),
+      })
+    );
+  }
+
+  return issues;
+});
+
+const canCalculateYield = computed(() => selectionIssues.value.length === 0);
+const primarySelectionIssue = computed(() => selectionIssues.value[0] ?? null);
 
 type TransactionForm = TransactionCreate & { taxed: TaxStatus; memo?: string | null };
 
@@ -350,6 +611,29 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.transactions,
+  (transactions) => {
+    if (!selectedTransactionIds.value.length) {
+      return;
+    }
+    const available = new Set(transactions.map((tx) => tx.id));
+    selectedTransactionIds.value = selectedTransactionIds.value.filter((id) =>
+      available.has(id)
+    );
+  }
+);
+
+watch(
+  selectedTransactionIds,
+  () => {
+    if (yieldError.value) {
+      yieldError.value = null;
+    }
+    hasAttemptedYield.value = false;
+  }
+);
+
 const sortedTransactions = computed(() =>
   [...props.transactions].sort((a, b) => (a.trade_date < b.trade_date ? 1 : -1))
 );
@@ -391,6 +675,98 @@ function resetFormState() {
   tradeType.value = "buy";
 }
 
+function enterRoundYieldMode() {
+  roundYieldMode.value = true;
+  selectedTransactionIds.value = [];
+  yieldError.value = null;
+  yieldResult.value = null;
+  calculatingYield.value = false;
+  hasAttemptedYield.value = false;
+  if (isEditing.value) {
+    resetFormState();
+  }
+}
+
+function exitRoundYieldMode() {
+  roundYieldMode.value = false;
+  selectedTransactionIds.value = [];
+  yieldError.value = null;
+  yieldResult.value = null;
+  calculatingYield.value = false;
+  hasAttemptedYield.value = false;
+}
+
+function isSelected(id: string): boolean {
+  return selectedTransactionIds.value.includes(id);
+}
+
+function toggleSelection(id: string) {
+  if (!roundYieldMode.value) {
+    return;
+  }
+  const exists = isSelected(id);
+  selectedTransactionIds.value = exists
+    ? selectedTransactionIds.value.filter((item) => item !== id)
+    : [...selectedTransactionIds.value, id];
+}
+
+function handleRowActivation(tx: Transaction) {
+  if (roundYieldMode.value) {
+    toggleSelection(tx.id);
+    return;
+  }
+  prefillFromTransaction(tx);
+}
+
+function resolveErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return t("transactions.roundYield.genericError");
+}
+
+async function handleCalculateYield() {
+  if (calculatingYield.value) {
+    return;
+  }
+
+  hasAttemptedYield.value = true;
+
+  if (!canCalculateYield.value) {
+    const message =
+      primarySelectionIssue.value ??
+      t("transactions.roundYield.validation.minimum");
+    yieldResult.value = null;
+    yieldError.value = null;
+    emit("notify", { type: "error", message });
+    return;
+  }
+
+  calculatingYield.value = true;
+  yieldError.value = null;
+
+  try {
+    const result = await calculateRoundYield({
+      transaction_ids: selectedTransactionIds.value,
+    });
+    yieldResult.value = result;
+  } catch (error: unknown) {
+    yieldResult.value = null;
+    const message = resolveErrorMessage(error);
+    yieldError.value = message;
+    emit("notify", { type: "error", message });
+  } finally {
+    calculatingYield.value = false;
+  }
+}
+
+function closeYieldResult() {
+  yieldResult.value = null;
+}
+
 function populateFormFromTransaction(tx: Transaction) {
   form.trade_date = tx.trade_date;
   form.symbol = tx.symbol;
@@ -424,6 +800,17 @@ function formatCurrency(value: number, currency: string): string {
   return formatted;
 }
 
+function formatPercent(value: number | null): string {
+  if (value === null || Number.isNaN(value)) {
+    return "—";
+  }
+  return new Intl.NumberFormat(locale.value, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function marketLabel(value: string): string {
   return value === "US"
     ? t("common.toggle.market.us")
@@ -452,6 +839,9 @@ function confirmDelete(tx: Transaction) {
 }
 
 function startEditing(tx: Transaction) {
+  if (roundYieldMode.value) {
+    exitRoundYieldMode();
+  }
   editingId.value = tx.id;
   setTradeType(tx.quantity < 0 ? "sell" : "buy");
   setMarket(tx.market === "US" ? "US" : "JP");
@@ -581,10 +971,61 @@ function setMarket(type: "JP" | "US") {
   font-size: 0.9rem;
 }
 
+.summary-fade-enter-active,
+.summary-fade-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.summary-fade-enter-from,
+.summary-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  letter-spacing: 0.4px;
+}
+
+.header-button--primary {
+  padding: 0.55rem 1.6rem;
+  font-weight: 600;
+}
+
+.spinner-inline {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 167, 201, 0.25);
+  border-top-color: var(--accent);
+  margin-right: 0.5rem;
+  animation: spin 0.75s linear infinite;
+  vertical-align: middle;
+}
+
 .panel-grid {
   display: grid;
   gap: 1.5rem;
   grid-template-columns: minmax(320px, 420px) 1fr;
+}
+
+.form-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 @media (max-width: 1024px) {
@@ -780,6 +1221,18 @@ function setMarket(type: "JP" | "US") {
   min-width: 640px;
 }
 
+.select-column {
+  width: 3.25rem;
+  text-align: center;
+}
+
+.select-column input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .actions-column {
   width: 1%;
   white-space: nowrap;
@@ -877,6 +1330,19 @@ function setMarket(type: "JP" | "US") {
   box-shadow: inset 0.35rem 0 0 color-mix(in srgb, var(--accent-red) 55%, transparent);
 }
 
+.interactive-row.selection-mode {
+  cursor: pointer;
+}
+
+.interactive-row.is-selected {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent-warm) 55%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-warm) 32%, transparent),
+    transparent 65%
+  ) !important;
+}
+
 .interactive-row.is-buy:hover {
   background: linear-gradient(
     90deg,
@@ -902,6 +1368,146 @@ function setMarket(type: "JP" | "US") {
   transform: scale(0.995);
 }
 
+.round-yield-summary {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px dashed color-mix(in srgb, var(--accent-warm) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-warm) 16%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.round-yield-summary .hint {
+  font-style: italic;
+  color: color-mix(in srgb, var(--accent-warm) 45%, var(--text-faint));
+}
+
+.selection-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.4rem 0.75rem;
+  padding-left: 1rem;
+  color: color-mix(in srgb, var(--accent-warm) 55%, var(--text));
+}
+
+.selection-breakdown li {
+  list-style: disc;
+  white-space: nowrap;
+}
+
+.selection-issues {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: color-mix(in srgb, var(--accent-warm) 60%, var(--text));
+  font-size: 0.85rem;
+}
+
+.selection-issues li {
+  list-style: disc;
+}
+
+.error-banner {
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(244, 67, 54, 0.12);
+  border: 1px solid rgba(244, 67, 54, 0.32);
+  color: var(--accent-red);
+  font-size: 0.85rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 15, 30, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  z-index: 999;
+}
+
+.modal-panel {
+  width: min(620px, 100%);
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+.modal-header,
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(180deg, rgba(11, 61, 145, 0.08), transparent);
+}
+
+.modal-footer {
+  justify-content: flex-end;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+
+.modal-body {
+  padding: 0 1.5rem 1.5rem;
+  overflow-y: auto;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.modal-intro {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.metrics-grid div {
+  background: rgba(15, 167, 201, 0.05);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  border: 1px solid rgba(15, 167, 201, 0.12);
+}
+
+.metrics-grid dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-faint);
+  margin-bottom: 0.25rem;
+}
+
+.metrics-grid dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
 .empty {
   text-align: center;
   color: var(--text-faint);
@@ -915,6 +1521,12 @@ function setMarket(type: "JP" | "US") {
 .positive {
   color: var(--accent-cyan);
   font-weight: 600;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 </style>

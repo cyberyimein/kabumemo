@@ -164,10 +164,11 @@ a {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  flex: 0 1 320px;
+  flex: 1 1 440px;
+  max-width: 540px;
   min-width: 0;
-  justify-content: center;
-  padding: 0.55rem 0.75rem;
+  justify-content: flex-start;
+  padding: 0.55rem 0.9rem;
   border-radius: var(--radius-sm);
   font-size: 0.88rem;
 }
@@ -188,7 +189,6 @@ a {
 
   .toast-inline {
     flex-basis: 100%;
-    justify-content: flex-start;
   }
 }
 

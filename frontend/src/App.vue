@@ -59,6 +59,7 @@
         @update="handleUpdateTransaction"
         @delete="handleDeleteTransaction"
         @refresh="handleRefreshTransactions"
+        @notify="handleNotify"
       />
 
       <PositionsTab
@@ -295,6 +296,10 @@ async function handleDeleteTransaction(id: string) {
 async function handleRefreshTransactions() {
   await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
   showNotification("success", t("transactions.toasts.refreshed"));
+}
+
+function handleNotify(payload: { type: "success" | "error" | "info"; message: string }) {
+  showNotification(payload.type, payload.message);
 }
 
 async function handleRefreshPositions() {

@@ -118,6 +118,47 @@
     },
     "confirm": {
       "delete": "确认删除 {date} 的 {symbol} 交易吗？"
+    },
+    "roundYield": {
+      "enter": "一轮收益率",
+      "calculate": "计算",
+      "cancel": "取消",
+      "close": "关闭",
+      "selectionSummary": "已选 {count} 条 · 共 {total} 条",
+      "selectionHint": "可跨分页选择多笔买卖组合，计算一轮完整收益率。",
+      "buyCount": "买入 {count} 笔",
+      "sellCount": "卖出 {count} 笔",
+      "netQuantity": "净数量：{quantity}",
+      "genericError": "无法计算所选交易的收益率。",
+      "validation": {
+        "minimum": "请至少选择两笔交易。",
+        "symbol": "请选择同一股票的交易。",
+        "fundingGroup": "请选择同一资金组的交易。",
+        "market": "请选择来自同一市场的交易。",
+        "currency": "请选择使用同一资金货币的交易。",
+        "netQuantityMismatch": "买卖数量必须相抵为 0（当前为 {quantity}）。"
+      },
+      "table": {
+        "select": "选择",
+        "selectRow": "选择 {date} 的 {symbol}"
+      },
+      "dialogTitle": "一轮收益率",
+      "dialogSummary": "{symbol} · {group}（{currency}）",
+      "metrics": {
+        "totalBuy": "买入总额",
+        "totalSell": "卖出总额",
+        "grossProfit": "税前收益",
+        "taxTotal": "纳税总额",
+        "netProfit": "税后收益",
+        "return": "收益率",
+        "returnAfterTax": "税后收益率",
+        "annualized": "年化收益率",
+        "annualizedAfterTax": "年化税后收益率",
+        "holdingDays": "持有天数",
+        "windowStart": "首次交易",
+        "windowEnd": "最后交易"
+      },
+      "holdingDaysValue": "{days} 天"
     }
   },
   "positions": {

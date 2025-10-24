@@ -5,6 +5,8 @@ import type {
   FundingGroupUpdate,
   HealthResponse,
   Position,
+  RoundTripYieldRequest,
+  RoundTripYieldResponse,
   TaxSettlementRequest,
   TaxSettlementRecord,
   TaxSettlementUpdate,
@@ -83,6 +85,15 @@ export function updateTransaction(
 export function deleteTransaction(id: string): Promise<void> {
   return request<void>(`/transactions/${encodeURIComponent(id)}`, {
     method: "DELETE"
+  });
+}
+
+export function calculateRoundYield(
+  payload: RoundTripYieldRequest
+): Promise<RoundTripYieldResponse> {
+  return request<RoundTripYieldResponse>("/transactions/round-yield", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

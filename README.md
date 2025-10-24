@@ -208,6 +208,13 @@ python backend/scripts/check_data_sync.py --data-dir ./data --verbose
 - Provide backup/restore utilities (CSV/ZIP).
 - Explore packaging into a desktop shortcut or single-file binary.
 
+## Recent Work — 2025-10-22
+
+- **Round-trip yield analytics**: Added a dedicated FastAPI route (`POST /api/transactions/round-yield`) and the underlying `compute_round_trip_yield` service to reconcile matching buy/sell transactions, surface gross/net profit, tax impact, and annualized returns. Expanded Pydantic schemas and backend tests to cover happy path and validation failures.
+- **Trades tab enhancements**: Introduced “Round Trip Yield” mode with multi-select checkboxes, a live selection summary card, validation messaging, and an analytics modal that highlights all computed metrics. The calculate button remains accessible even when selections are invalid, while warnings are routed through the global notification bar.
+- **UX + localization polish**: Refreshed button sizing, color palette, and card layout, localized all new copy in English/Japanese/Chinese, and ensured assistive technologies receive alerts only after an explicit calculation attempt.
+- **Quality gates**: Verified changes with `pytest` on the backend and `npm run build` (includes `vue-tsc`) on the frontend to keep the bundle and analytics pipeline stable.
+
 ## Recent Work — 2025-10-07
 
 - **Dual storage rollout**: The repository now mirrors every write to both JSON and a SQLite database, with transactional safeguards in `LocalDataRepository` and helper accessors to query either source.

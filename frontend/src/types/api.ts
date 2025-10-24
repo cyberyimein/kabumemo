@@ -37,6 +37,33 @@ export interface Transaction extends TransactionBase {
   id: string;
 }
 
+export interface RoundTripYieldRequest {
+  transaction_ids: string[];
+}
+
+export interface RoundTripYieldResponse {
+  symbol: string;
+  funding_group: string;
+  market: Market;
+  cash_currency: Currency;
+  transaction_ids: string[];
+  trade_count: number;
+  total_buy_quantity: number;
+  total_sell_quantity: number;
+  total_buy_amount: number;
+  total_sell_amount: number;
+  gross_profit: number;
+  tax_total: number;
+  net_profit: number;
+  return_ratio: number | null;
+  return_after_tax: number | null;
+  annualized_return: number | null;
+  annualized_return_after_tax: number | null;
+  holding_days: number;
+  trade_window_start: string;
+  trade_window_end: string;
+}
+
 export interface PositionBreakdown {
   currency: Currency;
   quantity: number;

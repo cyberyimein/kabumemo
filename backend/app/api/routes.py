@@ -11,6 +11,8 @@ from ..models.schemas import (
     TaxSettlementRequest,
     TaxSettlementRecord,
     TaxSettlementUpdate,
+    RoundTripYieldRequest,
+    RoundTripYieldResponse,
     Transaction,
     TransactionCreate,
     TransactionUpdate,
@@ -19,6 +21,7 @@ from ..models.schemas import (
 from ..services.analytics import (
     compute_fund_snapshots,
     compute_positions,
+    compute_round_trip_yield,
     delete_tax_settlement,
     record_tax_settlement,
     update_tax_settlement,
@@ -67,6 +70,32 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
                 detail="Insufficient position to complete sell order",
             )
     return repository.add_transaction(payload)
+
+
+@router.post(
+    "/transactions/round-yield",
+    response_model=RoundTripYieldResponse,
+)
+def calculate_round_trip_yield(payload: RoundTripYieldRequest) -> RoundTripYieldResponse:
+    transactions = repository.list_transactions()
+    transaction_lookup = {tx.id: tx for tx in transactions}
+    missing = [tx_id for tx_id in payload.transaction_ids if tx_id not in transaction_lookup]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction {missing[0]} not found",
+        )
+
+    selected_transactions = [transaction_lookup[tx_id] for tx_id in payload.transaction_ids]
+    settlements = repository.list_tax_settlements()
+    relevant_settlements = [
+        record for record in settlements if record.transaction_id in payload.transaction_ids
+    ]
+
+    try:
+        return compute_round_trip_yield(selected_transactions, relevant_settlements)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.api_route(
