@@ -173,7 +173,7 @@ The UI uses tabs to organize primary workflows:
   - Calculates holdings with per-currency quantity/average-cost breakdowns, including realized P/L.
 - **Funds & Groups**
   - Manage funding groups (create, edit, delete) and visualize detailed fund snapshots with year-over-year metrics.
-  - View currency-level aggregates to compare overall cash, holdings, and profitability across groups.
+  - View currency-level aggregates to compare overall cash, holdings, and profitability across groups, now with an inline USD→JPY exchange-rate input that converts the merged summary into JPY in real time.
   - Deletion checks that at least one group remains; all copy is localized.
 - **Tax**
   - Automatically lists sell trades whose tax status is still pending.

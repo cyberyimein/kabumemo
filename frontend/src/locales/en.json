@@ -233,9 +233,16 @@
       "currentYearPl": "YTD Realized P&L",
       "currentYearRatio": "YTD Return",
       "previousYearPl": "Prior Year Realized P&L",
-      "previousYearRatio": "Prior Year Return"
+      "previousYearRatio": "Prior Year Return",
+      "combinedLabel": "Combined ({currency})"
     },
     "emptyAggregate": "No aggregate data",
+    "exchangeRate": {
+      "label": "USD → JPY rate",
+      "helper": "Enter the latest USD/JPY rate to view totals converted to JPY.",
+      "invalid": "Please enter a positive exchange rate.",
+      "required": "Provide a rate to include USD balances."
+    },
     "confirm": {
       "mustKeepOne": "Keep at least one funding group.",
       "delete": "Delete funding group {name}?"

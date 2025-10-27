@@ -163,6 +163,31 @@
 
     <div class="surface">
       <h3>{{ t("funds.aggregateTitle") }}</h3>
+      <div class="aggregate-controls">
+        <label class="exchange-rate-field">
+          <span>{{ t("funds.exchangeRate.label") }}</span>
+          <input
+            v-model="exchangeRateInput"
+            type="number"
+            inputmode="decimal"
+            step="1"
+            min="0"
+            placeholder="150.00"
+            @blur="handleRateBlur"
+          />
+        </label>
+        <p
+          class="exchange-rate-hint"
+          :class="{ 'exchange-rate-hint--warning': needsRateReminder }"
+        >
+          {{
+            needsRateReminder
+              ? t("funds.exchangeRate.required")
+              : t("funds.exchangeRate.helper")
+          }}
+        </p>
+        <p v-if="rateError" class="exchange-rate-error">{{ rateError }}</p>
+      </div>
       <div class="table-scroll">
         <table>
           <thead>
@@ -207,6 +232,43 @@
                 {{ formatRatio(item.previous_year_pl_ratio) }}
               </td>
             </tr>
+            <tr v-if="combinedTotals" class="combined-row">
+              <td>
+                {{
+                  t("funds.aggregateTable.combinedLabel", {
+                    currency: currencyLabel(combinedTotals.currency),
+                  })
+                }}
+              </td>
+              <td class="numeric">{{ combinedTotals.group_count }}</td>
+              <td class="numeric">
+                {{ formatCurrency(combinedTotals.initial_amount, combinedTotals.currency) }}
+              </td>
+              <td class="numeric">
+                {{ formatCurrency(combinedTotals.cash_balance, combinedTotals.currency) }}
+              </td>
+              <td class="numeric">
+                {{ formatCurrency(combinedTotals.holding_cost, combinedTotals.currency) }}
+              </td>
+              <td class="numeric">
+                {{ formatCurrency(combinedTotals.current_total, combinedTotals.currency) }}
+              </td>
+              <td :class="['numeric', valueClass(combinedTotals.total_pl)]">
+                {{ formatCurrency(combinedTotals.total_pl, combinedTotals.currency) }}
+              </td>
+              <td :class="['numeric', valueClass(combinedTotals.current_year_pl)]">
+                {{ formatCurrency(combinedTotals.current_year_pl, combinedTotals.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(combinedTotals.current_year_pl_ratio)]">
+                {{ formatRatio(combinedTotals.current_year_pl_ratio) }}
+              </td>
+              <td :class="['numeric', valueClass(combinedTotals.previous_year_pl)]">
+                {{ formatCurrency(combinedTotals.previous_year_pl, combinedTotals.currency) }}
+              </td>
+              <td :class="['numeric', ratioClass(combinedTotals.previous_year_pl_ratio)]">
+                {{ formatRatio(combinedTotals.previous_year_pl_ratio) }}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -222,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import PaginationControls from "./ui/PaginationControls.vue";
@@ -306,6 +368,188 @@ const {
 const pagedAggregated = computed(() =>
   props.aggregated.slice(aggregateOffset.value, aggregateOffset.value + aggregatePageSize)
 );
+
+const BASE_CURRENCY: Currency = "JPY";
+const exchangeRateInput = ref<string | number>("150");
+
+function normalizeRateInput(): string {
+  const value = exchangeRateInput.value;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return "";
+}
+
+const hasRateInput = computed(() => normalizeRateInput().trim().length > 0);
+const parsedExchangeRate = computed<number | null>(() => {
+  const raw = normalizeRateInput().trim();
+  if (!raw) {
+    return null;
+  }
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+});
+
+const lastValidExchangeRate = ref<number | null>(parsedExchangeRate.value);
+watch(parsedExchangeRate, (value: number | null) => {
+  if (value && value > 0) {
+    lastValidExchangeRate.value = value;
+  }
+});
+
+const effectiveExchangeRate = computed<number | null>(() =>
+  parsedExchangeRate.value ?? lastValidExchangeRate.value
+);
+
+const needsExchangeRate = computed(() =>
+  props.aggregated.some((item) => item.currency !== BASE_CURRENCY)
+);
+
+const needsRateReminder = computed(
+  () => needsExchangeRate.value && !effectiveExchangeRate.value
+);
+
+const rateError = computed(() => {
+  if (!hasRateInput.value) {
+    return "";
+  }
+  return parsedExchangeRate.value ? "" : t("funds.exchangeRate.invalid");
+});
+
+type CombinedAccumulator = {
+  group_count: number;
+  initial_amount: number;
+  cash_balance: number;
+  holding_cost: number;
+  current_total: number;
+  total_pl: number;
+  current_year_pl: number;
+  previous_year_pl: number;
+  baseline_current: number;
+  baseline_previous: number;
+};
+
+function makeAccumulator(): CombinedAccumulator {
+  return {
+    group_count: 0,
+    initial_amount: 0,
+    cash_balance: 0,
+    holding_cost: 0,
+    current_total: 0,
+    total_pl: 0,
+    current_year_pl: 0,
+    previous_year_pl: 0,
+    baseline_current: 0,
+    baseline_previous: 0,
+  };
+}
+
+function convertToBase(value: number, currency: Currency, rate: number | null): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (currency === BASE_CURRENCY) {
+    return value;
+  }
+  if (!rate || rate <= 0) {
+    return 0;
+  }
+  return value * rate;
+}
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function computeRatio(numerator: number, denominator: number): number | null {
+  return Math.abs(denominator) > 1e-9 ? numerator / denominator : null;
+}
+
+function roundRatio(value: number | null): number | null {
+  if (value === null) {
+    return null;
+  }
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function finalizeAccumulator(bucket: CombinedAccumulator): AggregatedFundSnapshot {
+  const currentRatio = roundRatio(computeRatio(bucket.current_year_pl, bucket.baseline_current));
+  const previousRatio = roundRatio(
+    computeRatio(bucket.previous_year_pl, bucket.baseline_previous)
+  );
+
+  return {
+    currency: BASE_CURRENCY,
+    group_count: bucket.group_count,
+    initial_amount: roundCurrency(bucket.initial_amount),
+    cash_balance: roundCurrency(bucket.cash_balance),
+    holding_cost: roundCurrency(bucket.holding_cost),
+    current_total: roundCurrency(bucket.current_total),
+    total_pl: roundCurrency(bucket.total_pl),
+    current_year_pl: roundCurrency(bucket.current_year_pl),
+    current_year_pl_ratio: currentRatio,
+    previous_year_pl: roundCurrency(bucket.previous_year_pl),
+    previous_year_pl_ratio: previousRatio,
+  };
+}
+
+const combinedTotals = computed<AggregatedFundSnapshot | null>(() => {
+  if (!props.aggregated.length) {
+    return null;
+  }
+
+  const rate = effectiveExchangeRate.value;
+  if (needsExchangeRate.value && (!rate || rate <= 0)) {
+    return null;
+  }
+
+  const bucket = makeAccumulator();
+
+  props.aggregated.forEach((item) => {
+    const baselineCurrent = item.current_total - item.current_year_pl;
+    const baselinePrevious = baselineCurrent - item.previous_year_pl;
+
+    bucket.group_count += item.group_count;
+    bucket.initial_amount += convertToBase(item.initial_amount, item.currency, rate);
+    bucket.cash_balance += convertToBase(item.cash_balance, item.currency, rate);
+    bucket.holding_cost += convertToBase(item.holding_cost, item.currency, rate);
+    bucket.current_total += convertToBase(item.current_total, item.currency, rate);
+    bucket.total_pl += convertToBase(item.total_pl, item.currency, rate);
+    bucket.current_year_pl += convertToBase(item.current_year_pl, item.currency, rate);
+    bucket.previous_year_pl += convertToBase(item.previous_year_pl, item.currency, rate);
+    bucket.baseline_current += convertToBase(baselineCurrent, item.currency, rate);
+    bucket.baseline_previous += convertToBase(baselinePrevious, item.currency, rate);
+  });
+
+  return finalizeAccumulator(bucket);
+});
+
+function handleRateBlur() {
+  const raw = normalizeRateInput().trim();
+
+  if (!raw) {
+    lastValidExchangeRate.value = null;
+    exchangeRateInput.value = "";
+    return;
+  }
+
+  const parsed = parsedExchangeRate.value;
+  if (parsed && parsed > 0) {
+    const formatted = parsed.toFixed(2);
+    exchangeRateInput.value = formatted;
+    lastValidExchangeRate.value = parsed;
+    return;
+  }
+
+  if (lastValidExchangeRate.value !== null) {
+    exchangeRateInput.value = lastValidExchangeRate.value.toFixed(2);
+  } else {
+    exchangeRateInput.value = "";
+  }
+}
 
 function resetForm(): void {
   form.name = "";
@@ -515,6 +759,75 @@ function confirmDelete(name: string) {
 .empty {
   text-align: center;
   color: var(--text-faint);
+}
+
+.aggregate-controls {
+  display: grid;
+  gap: 0.35rem 1.5rem;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  align-items: center;
+}
+
+.exchange-rate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exchange-rate-field span {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  letter-spacing: 0.35px;
+}
+
+.exchange-rate-field input {
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(97, 123, 177, 0.4);
+  padding: 0.45rem 0.65rem;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  color: var(--text);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.exchange-rate-field input:focus {
+  outline: none;
+  border-color: rgba(15, 167, 201, 0.6);
+  box-shadow: 0 0 0 2px rgba(15, 167, 201, 0.18);
+}
+
+.exchange-rate-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.exchange-rate-hint--warning {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.exchange-rate-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--accent-red);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .aggregate-controls {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+}
+
+.combined-row {
+  background: linear-gradient(90deg, rgba(15, 167, 201, 0.09), rgba(15, 167, 201, 0));
+  font-weight: 600;
+}
+
+.combined-row .numeric {
+  font-weight: 600;
 }
 
 

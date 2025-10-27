@@ -233,9 +233,16 @@
       "currentYearPl": "当期実現損益",
       "currentYearRatio": "当期利回り",
       "previousYearPl": "前期実現損益",
-      "previousYearRatio": "前期利回り"
+      "previousYearRatio": "前期利回り",
+      "combinedLabel": "合算 ({currency})"
     },
     "emptyAggregate": "サマリー表示できるデータがありません",
+    "exchangeRate": {
+      "label": "ドル円レート",
+      "helper": "最新の USD/JPY レートを入力すると、すべて円建てで合算したサマリーを表示します。",
+      "invalid": "0 より大きい為替レートを入力してください。",
+      "required": "ドル建ての金額を含めるにはレートを入力してください。"
+    },
     "confirm": {
       "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
       "delete": "資金グループ {name} を削除しますか？"

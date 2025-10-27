@@ -233,9 +233,16 @@
       "currentYearPl": "今年落地盈亏",
       "currentYearRatio": "今年收益率",
       "previousYearPl": "去年落地盈亏",
-      "previousYearRatio": "去年收益率"
+      "previousYearRatio": "去年收益率",
+      "combinedLabel": "合计 ({currency})"
     },
     "emptyAggregate": "暂无可合并的资金数据",
+    "exchangeRate": {
+      "label": "美元兑日元汇率",
+      "helper": "输入最新的 USD/JPY 汇率，将所有数据折算为日元后的资金概览。",
+      "invalid": "请输入大于 0 的汇率。",
+      "required": "请输入汇率以折算美元资金。"
+    },
     "confirm": {
       "mustKeepOne": "至少保留一个资金组。",
       "delete": "确定删除资金组 {name} 吗？"
