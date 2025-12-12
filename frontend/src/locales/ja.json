@@ -198,6 +198,9 @@
     },
     "submit": "資金グループを作成",
     "listTitle": "資金グループ ({count})",
+    "actions": {
+      "addCapital": "資金を追加"
+    },
     "table": {
       "name": "名称",
       "currency": "通貨",
@@ -243,6 +246,28 @@
       "invalid": "0 より大きい為替レートを入力してください。",
       "required": "ドル建ての金額を含めるにはレートを入力してください。"
     },
+    "capitalDialog": {
+      "title": "{name} に資金を追加",
+      "description": "資金が利用可能になる日付を指定してください。未来日であれば今年の利回りには影響しません。",
+      "amount": "金額",
+      "date": "反映日",
+      "notes": "メモ (任意)",
+      "submit": "資金を追加"
+    },
+    "capitalHistory": {
+      "title": "資金追加の履歴",
+      "description": "反映日順で資金追加のレコードを確認できます。",
+      "count": "{count} 件",
+      "table": {
+        "effectiveDate": "反映日",
+        "group": "資金グループ",
+        "amount": "金額",
+        "currency": "通貨",
+        "notes": "メモ"
+      },
+      "empty": "資金追加の記録がまだありません。",
+      "futureBadge": "予定"
+    },
     "confirm": {
       "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
       "delete": "資金グループ {name} を削除しますか？"
@@ -250,7 +275,8 @@
     "toasts": {
       "created": "資金グループを作成しました",
       "deleted": "資金グループを削除しました",
-      "refreshed": "資金データを更新しました"
+      "refreshed": "資金データを更新しました",
+      "capitalAdded": "資金を追加しました"
     }
   },
   "tax": {

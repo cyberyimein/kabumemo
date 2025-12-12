@@ -15,6 +15,21 @@ export interface FundingGroupUpdate {
   notes?: string | null;
 }
 
+export interface FundingCapitalAdjustmentPayload {
+  amount: number;
+  effective_date: string;
+  notes?: string | null;
+}
+
+export interface FundingCapitalAdjustmentRequest extends FundingCapitalAdjustmentPayload {
+  funding_group: string;
+}
+
+export interface FundingCapitalAdjustment extends FundingCapitalAdjustmentPayload {
+  id: string;
+  funding_group: string;
+}
+
 export interface TransactionBase {
   trade_date: string;
   symbol: string;

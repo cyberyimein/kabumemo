@@ -73,9 +73,11 @@
         :funding-groups="state.fundingGroups"
         :funds="state.fundSnapshots.funds"
         :aggregated="state.fundSnapshots.aggregated"
+        :capital-adjustments="state.capitalAdjustments"
         @create="handleCreateFundingGroup"
         @delete="handleDeleteFundingGroup"
         @refresh="handleRefreshFunds"
+        @add-capital="handleAddCapital"
       />
 
       <TaxTab
@@ -104,25 +106,29 @@ import TaxTab from "@/components/TaxTab.vue";
 import TransactionsTab from "@/components/TransactionsTab.vue";
 import {
   ApiError,
+  addFundingCapital,
   createFundingGroup,
   createTransaction,
   deleteFundingGroup,
+  deleteTaxSettlement,
   deleteTransaction,
+  getCapitalAdjustments,
   getFunds,
   getFundingGroups,
   getHealth,
   getPositions,
-  getTransactions,
   getTaxSettlements,
-  updateTransaction,
-  updateTaxSettlement,
+  getTransactions,
   settleTax,
-  deleteTaxSettlement,
+  updateTaxSettlement,
+  updateTransaction,
 } from "@/services/api";
 import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
 import type { LocaleCode } from "@/i18n";
 import type {
   AggregatedFundSnapshot,
+  FundingCapitalAdjustment,
+  FundingCapitalAdjustmentRequest,
   FundSnapshot,
   FundingGroup,
   HealthResponse,
@@ -140,6 +146,11 @@ type TabId = "transactions" | "positions" | "funds" | "tax";
 type TransactionUpdateEvent = {
   id: string;
   data: TransactionUpdate;
+  onDone: (success: boolean) => void;
+};
+
+type CapitalAdditionEvent = {
+  data: FundingCapitalAdjustmentRequest;
   onDone: (success: boolean) => void;
 };
 
@@ -165,6 +176,7 @@ const state = reactive({
   },
   fundingGroups: [] as FundingGroup[],
   taxSettlements: [] as TaxSettlementRecord[],
+  capitalAdjustments: [] as FundingCapitalAdjustment[],
 });
 
 const currentTab = ref<TabId>("transactions");
@@ -204,12 +216,13 @@ onMounted(async () => {
 async function refreshAllData(showToast = false) {
   try {
     loading.value = true;
-    const [groups, transactions, positions, fundsSnapshot, settlements] = await Promise.all([
+    const [groups, transactions, positions, fundsSnapshot, settlements, capitalAdjustments] = await Promise.all([
       getFundingGroups(),
       getTransactions(),
       getPositions(),
       getFunds(),
       getTaxSettlements(),
+      getCapitalAdjustments(),
     ]);
     state.fundingGroups = groups;
     state.transactions = transactions;
@@ -217,6 +230,7 @@ async function refreshAllData(showToast = false) {
     state.fundSnapshots.funds = fundsSnapshot.funds;
     state.fundSnapshots.aggregated = fundsSnapshot.aggregated;
     state.taxSettlements = settlements;
+    state.capitalAdjustments = capitalAdjustments;
     if (showToast) {
       showNotification("success", t("app.toasts.dataRefreshed"));
     }
@@ -308,7 +322,7 @@ async function handleRefreshPositions() {
 }
 
 async function handleRefreshFunds() {
-  await Promise.all([reloadFundingGroups(), reloadFunds()]);
+  await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
   showNotification("success", t("funds.toasts.refreshed"));
 }
 
@@ -316,7 +330,7 @@ async function handleCreateFundingGroup(payload: FundingGroup) {
   try {
     await createFundingGroup(payload);
     showNotification("success", t("funds.toasts.created"));
-    await Promise.all([reloadFundingGroups(), reloadFunds()]);
+    await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -326,8 +340,20 @@ async function handleDeleteFundingGroup(name: string) {
   try {
     await deleteFundingGroup(name);
     showNotification("success", t("funds.toasts.deleted"));
-    await Promise.all([reloadFundingGroups(), reloadFunds()]);
+    await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
   } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleAddCapital(event: CapitalAdditionEvent) {
+  try {
+    await addFundingCapital(event.data);
+    event.onDone(true);
+    showNotification("success", t("funds.toasts.capitalAdded"));
+    await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
+  } catch (error: unknown) {
+    event.onDone(false);
     showNotification("error", asErrorMessage(error));
   }
 }
@@ -385,6 +411,10 @@ async function reloadFundingGroups() {
 
 async function reloadTaxSettlements() {
   state.taxSettlements = await getTaxSettlements();
+}
+
+async function reloadCapitalAdjustments() {
+  state.capitalAdjustments = await getCapitalAdjustments();
 }
 </script>
 

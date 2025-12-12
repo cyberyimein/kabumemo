@@ -198,6 +198,9 @@
     },
     "submit": "Create Group",
     "listTitle": "Funding Groups ({count})",
+    "actions": {
+      "addCapital": "Add capital"
+    },
     "table": {
       "name": "Name",
       "currency": "Currency",
@@ -243,6 +246,28 @@
       "invalid": "Please enter a positive exchange rate.",
       "required": "Provide a rate to include USD balances."
     },
+    "capitalDialog": {
+      "title": "Add capital to {name}",
+      "description": "Pick the date the new funds become active. Future-dated capital won't dilute current-year returns.",
+      "amount": "Amount",
+      "date": "Effective Date",
+      "notes": "Notes (optional)",
+      "submit": "Add Capital"
+    },
+    "capitalHistory": {
+      "title": "Capital additions",
+      "description": "Track every capital injection sorted by effective date.",
+      "count": "{count} records",
+      "table": {
+        "effectiveDate": "Effective Date",
+        "group": "Funding Group",
+        "amount": "Amount",
+        "currency": "Currency",
+        "notes": "Notes"
+      },
+      "empty": "No capital additions recorded yet.",
+      "futureBadge": "Scheduled"
+    },
     "confirm": {
       "mustKeepOne": "Keep at least one funding group.",
       "delete": "Delete funding group {name}?"
@@ -250,7 +275,8 @@
     "toasts": {
       "created": "Funding group created",
       "deleted": "Funding group deleted",
-      "refreshed": "Funds updated"
+      "refreshed": "Funds updated",
+      "capitalAdded": "Capital added"
     }
   },
   "tax": {

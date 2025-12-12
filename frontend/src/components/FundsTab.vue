@@ -80,15 +80,24 @@
                   {{ formatCurrency(group.initial_amount, group.currency) }}
                 </td>
                 <td>{{ group.notes || "-" }}</td>
-                <td>
-                  <button
-                    class="danger-btn"
-                    type="button"
-                    @click="confirmDelete(group.name)"
-                  >
-                    {{ t("common.actions.delete") }}
-                  </button>
-                </td>
+                  <td>
+                    <div class="actions-cell">
+                      <button
+                        class="ghost-btn"
+                        type="button"
+                        @click="openCapitalDialog(group)"
+                      >
+                        {{ t("funds.actions.addCapital") }}
+                      </button>
+                      <button
+                        class="danger-btn"
+                        type="button"
+                        @click="confirmDelete(group.name)"
+                      >
+                        {{ t("common.actions.delete") }}
+                      </button>
+                    </div>
+                  </td>
               </tr>
             </tbody>
           </table>
@@ -280,6 +289,122 @@
         @update:page="setAggregatePage"
       />
     </div>
+
+    <div class="surface">
+      <div class="capital-history-header">
+        <div>
+          <h3>{{ t("funds.capitalHistory.title") }}</h3>
+          <p class="capital-history-description">
+            {{ t("funds.capitalHistory.description") }}
+          </p>
+        </div>
+        <span v-if="capitalTotalItems" class="capital-history-count">
+          {{ t("funds.capitalHistory.count", { count: capitalTotalItems }) }}
+        </span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t("funds.capitalHistory.table.effectiveDate") }}</th>
+              <th>{{ t("funds.capitalHistory.table.group") }}</th>
+              <th class="numeric">{{ t("funds.capitalHistory.table.amount") }}</th>
+              <th>{{ t("funds.capitalHistory.table.currency") }}</th>
+              <th>{{ t("funds.capitalHistory.table.notes") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!capitalTotalItems">
+              <td colspan="5" class="empty">
+                {{ t("funds.capitalHistory.empty") }}
+              </td>
+            </tr>
+            <tr v-for="record in pagedCapitalAdjustments" :key="record.id">
+              <td>{{ formatEffectiveDate(record.effective_date) }}</td>
+              <td>{{ record.funding_group }}</td>
+              <td class="numeric">{{ formatCurrency(record.amount, capitalCurrency(record)) }}</td>
+              <td>{{ currencyLabel(capitalCurrency(record)) }}</td>
+              <td>
+                <div class="capital-notes-cell">
+                  <span>{{ record.notes || "-" }}</span>
+                  <span
+                    v-if="isFutureEffectiveDate(record.effective_date)"
+                    class="capital-status capital-status--scheduled"
+                  >
+                    {{ t("funds.capitalHistory.futureBadge") }}
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls
+        v-if="capitalTotalItems || capitalTotalPages > 1"
+        :page="capitalPage"
+        :total-pages="capitalTotalPages"
+        :total-items="capitalTotalItems"
+        @update:page="setCapitalPage"
+      />
+    </div>
+
+    <div
+      v-if="capitalDialog.open"
+      class="modal-backdrop"
+      @click.self="closeCapitalDialog"
+    >
+      <div class="modal-panel" role="dialog" aria-modal="true">
+        <header class="modal-header">
+          <h3>
+            {{
+              t("funds.capitalDialog.title", {
+                name: capitalDialog.group?.name ?? "",
+              })
+            }}
+          </h3>
+          <p class="modal-description">
+            {{ t("funds.capitalDialog.description") }}
+          </p>
+        </header>
+        <form class="modal-form" @submit.prevent="handleCapitalSubmit">
+          <label>
+            <span>{{ t("funds.capitalDialog.amount") }}</span>
+            <input
+              v-model.number="capitalForm.amount"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+            />
+          </label>
+          <label>
+            <span>{{ t("funds.capitalDialog.date") }}</span>
+            <input v-model="capitalForm.effective_date" type="date" required />
+          </label>
+          <label>
+            <span>{{ t("funds.capitalDialog.notes") }}</span>
+            <textarea v-model.trim="capitalForm.notes" rows="3"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="ghost-btn"
+              :disabled="capitalPending"
+              @click="closeCapitalDialog"
+            >
+              {{ t("common.actions.cancel") }}
+            </button>
+            <button
+              type="submit"
+              class="primary-btn"
+              :disabled="!capitalValid || capitalPending"
+            >
+              {{ t("funds.capitalDialog.submit") }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -293,6 +418,8 @@ import type {
   AggregatedFundSnapshot,
   Currency,
   FundSnapshot,
+  FundingCapitalAdjustment,
+  FundingCapitalAdjustmentRequest,
   FundingGroup,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
@@ -301,12 +428,19 @@ const props = defineProps<{
   fundingGroups: FundingGroup[];
   funds: FundSnapshot[];
   aggregated: AggregatedFundSnapshot[];
+  capitalAdjustments: FundingCapitalAdjustment[];
 }>();
+
+type CapitalAdditionEvent = {
+  data: FundingCapitalAdjustmentRequest;
+  onDone: (success: boolean) => void;
+};
 
 const emit = defineEmits<{
   (e: "create", payload: FundingGroup): void;
   (e: "delete", name: string): void;
   (e: "refresh"): void;
+  (e: "add-capital", payload: CapitalAdditionEvent): void;
 }>();
 
 const { t } = useI18n();
@@ -319,6 +453,35 @@ const form = reactive<FundingGroup>({
   notes: "",
 });
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+type CapitalFormState = {
+  amount: number | null;
+  effective_date: string;
+  notes: string;
+};
+
+const capitalDialog = reactive({
+  open: false,
+  group: null as FundingGroup | null,
+});
+
+const capitalForm = reactive<CapitalFormState>({
+  amount: null,
+  effective_date: todayIso(),
+  notes: "",
+});
+
+const capitalPending = ref(false);
+const capitalValid = computed(() => {
+  return (
+    capitalDialog.group !== null &&
+    capitalForm.amount !== null &&
+    capitalForm.amount > 0 &&
+    capitalForm.effective_date.trim().length > 0
+  );
+});
+
 const currencyOptions = computed(() => [
   {
     label: t("common.currencies.JPY"),
@@ -329,6 +492,13 @@ const currencyOptions = computed(() => [
     value: "USD" as Currency,
   },
 ]);
+
+const fundingGroupCurrency = computed<Record<string, Currency>>(() => {
+  return props.fundingGroups.reduce((acc, group) => {
+    acc[group.name] = group.currency;
+    return acc;
+  }, {} as Record<string, Currency>);
+});
 
 const {
   page: groupsPage,
@@ -367,6 +537,33 @@ const {
 
 const pagedAggregated = computed(() =>
   props.aggregated.slice(aggregateOffset.value, aggregateOffset.value + aggregatePageSize)
+);
+
+const sortedCapitalAdjustments = computed(() => {
+  return [...props.capitalAdjustments].sort((a, b) => {
+    if (a.effective_date === b.effective_date) {
+      return b.id.localeCompare(a.id);
+    }
+    return b.effective_date.localeCompare(a.effective_date);
+  });
+});
+
+const {
+  page: capitalPage,
+  totalPages: capitalTotalPages,
+  totalItems: capitalTotalItems,
+  offset: capitalOffset,
+  pageSize: capitalPageSize,
+  setPage: setCapitalPage,
+} = usePagination(computed(() => sortedCapitalAdjustments.value.length), {
+  pageSize: 25,
+});
+
+const pagedCapitalAdjustments = computed(() =>
+  sortedCapitalAdjustments.value.slice(
+    capitalOffset.value,
+    capitalOffset.value + capitalPageSize
+  )
 );
 
 const BASE_CURRENCY: Currency = "JPY";
@@ -577,6 +774,21 @@ function formatCurrency(value: number, currency: Currency): string {
   return formatted;
 }
 
+function capitalCurrency(record: FundingCapitalAdjustment): Currency {
+  return fundingGroupCurrency.value[record.funding_group] ?? "JPY";
+}
+
+function formatEffectiveDate(value: string): string {
+  return value || "-";
+}
+
+function isFutureEffectiveDate(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+  return value > todayIso();
+}
+
 function formatRatio(value: number | null): string {
   if (value === null || Number.isNaN(value)) {
     return "-";
@@ -622,6 +834,44 @@ async function handleSubmit() {
   } finally {
     pending.value = false;
   }
+}
+
+function openCapitalDialog(group: FundingGroup) {
+  capitalDialog.open = true;
+  capitalDialog.group = group;
+  capitalForm.amount = null;
+  capitalForm.effective_date = todayIso();
+  capitalForm.notes = "";
+}
+
+function closeCapitalDialog() {
+  if (capitalPending.value) {
+    return;
+  }
+  capitalDialog.open = false;
+  capitalDialog.group = null;
+}
+
+function handleCapitalSubmit() {
+  if (!capitalDialog.group || !capitalValid.value) {
+    return;
+  }
+  capitalPending.value = true;
+  const payload: FundingCapitalAdjustmentRequest = {
+    funding_group: capitalDialog.group.name,
+    amount: Number(capitalForm.amount),
+    effective_date: capitalForm.effective_date,
+    notes: capitalForm.notes?.trim() || undefined,
+  };
+  emit("add-capital", {
+    data: payload,
+    onDone(success) {
+      capitalPending.value = false;
+      if (success) {
+        closeCapitalDialog();
+      }
+    },
+  });
 }
 
 function confirmDelete(name: string) {
@@ -711,6 +961,50 @@ function confirmDelete(name: string) {
   letter-spacing: 1.1px;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.capital-history-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.capital-history-description {
+  margin: 0.35rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.capital-history-count {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.capital-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.capital-status--scheduled {
+  background: rgba(15, 167, 201, 0.08);
+  border: 1px solid rgba(15, 167, 201, 0.35);
+  color: var(--accent);
+}
+
+.capital-notes-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .primary-btn {
@@ -805,6 +1099,102 @@ function confirmDelete(name: string) {
 .exchange-rate-hint--warning {
   color: var(--accent);
   font-weight: 600;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ghost-btn {
+  border: 1px solid var(--divider);
+  background: transparent;
+  color: var(--text);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.ghost-btn:hover {
+  background: rgba(15, 167, 201, 0.1);
+  color: var(--accent);
+}
+
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 24, 54, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 2000;
+}
+
+.modal-panel {
+  width: min(420px, 100%);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-strong);
+  padding: clamp(1.2rem, 2vw, 1.6rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+
+.modal-description {
+  margin: 0.3rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.modal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.modal-form input,
+.modal-form textarea {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--divider);
+  padding: 0.6rem 0.8rem;
+  background: var(--panel-alt);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.modal-form textarea {
+  resize: vertical;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
 }
 
 .exchange-rate-error {

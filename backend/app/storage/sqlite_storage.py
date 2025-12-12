@@ -5,7 +5,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
-from ..models.schemas import FundingGroup, TaxSettlementRecord, Transaction
+from ..models.schemas import (
+    FundingCapitalAdjustment,
+    FundingGroup,
+    TaxSettlementRecord,
+    Transaction,
+)
 
 
 class SQLiteStorage:
@@ -73,6 +78,18 @@ class SQLiteStorage:
         );
         CREATE INDEX IF NOT EXISTS idx_tax_settlements_transaction
             ON tax_settlements (transaction_id);
+
+        CREATE TABLE IF NOT EXISTS capital_adjustments (
+            id TEXT PRIMARY KEY,
+            funding_group TEXT NOT NULL,
+            amount REAL NOT NULL,
+            effective_date TEXT NOT NULL,
+            notes TEXT,
+            FOREIGN KEY (funding_group) REFERENCES funding_groups(name)
+                ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_capital_adjustments_group
+            ON capital_adjustments (funding_group, effective_date);
         """
         with self._connect() as connection:
             connection.executescript(schema)
@@ -157,7 +174,30 @@ class SQLiteStorage:
                     rows,
                 )
 
-    # ------------------------------------------------------------------
+    def replace_capital_adjustments(
+        self, adjustments: Iterable[FundingCapitalAdjustment]
+    ) -> None:
+        rows: Sequence[tuple] = [
+            (
+                adjustment.id,
+                adjustment.funding_group,
+                float(adjustment.amount),
+                adjustment.effective_date.isoformat(),
+                adjustment.notes,
+            )
+            for adjustment in adjustments
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM capital_adjustments;")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO capital_adjustments (
+                        id, funding_group, amount, effective_date, notes
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
     # Read helpers
     def load_transactions(self) -> list[Transaction]:
         with self._connect() as connection:
@@ -185,6 +225,14 @@ class SQLiteStorage:
             ).fetchall()
         return [TaxSettlementRecord(**dict(row)) for row in rows]
 
+    def load_capital_adjustments(self) -> list[FundingCapitalAdjustment]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, funding_group, amount, effective_date, notes"
+                " FROM capital_adjustments ORDER BY effective_date, id;"
+            ).fetchall()
+        return [FundingCapitalAdjustment(**dict(row)) for row in rows]
+
     def has_data(self) -> bool:
         query = "SELECT 1 FROM transactions LIMIT 1;"
         with self._connect() as connection:
@@ -195,4 +243,7 @@ class SQLiteStorage:
             if cursor.fetchone():
                 return True
             cursor = connection.execute("SELECT 1 FROM tax_settlements LIMIT 1;")
+            if cursor.fetchone():
+                return True
+            cursor = connection.execute("SELECT 1 FROM capital_adjustments LIMIT 1;")
             return cursor.fetchone() is not None

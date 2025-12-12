@@ -134,6 +134,7 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 | POST   | `/api/funding-groups`                  | 新增/覆盖资金组                              |
 | PATCH  | `/api/funding-groups/{name}`           | 更新资金组的货币、初始资金或备注             |
 | DELETE | `/api/funding-groups/{name}`           | 删除资金组（需至少保留一个）                 |
+| POST   | `/api/funding-groups/{name}/capital`   | 为指定资金组追加资金，并指定生效日期         |
 | POST   | `/api/tax/settlements`                 | 记录纳税结果（返回带 ID 的记录），同步资金组 |
 | GET    | `/api/tax/settlements`                 | 查看全部纳税记录一览                         |
 | PATCH  | `/api/tax/settlements/{settlement_id}` | 更新纳税金额、货币或汇率                     |
@@ -155,6 +156,8 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 - **资金表 (Funds & Groups)**
   - 管理资金组（新增、修改、删除）并展示包含年度对比指标的资金快照。
   - 新增「通货汇总」视图，可快速对比不同货币下的总体资金、持仓成本与盈亏表现，内置 USD→JPY 汇率输入框，可即时把合并后的总览折算为日元。
+  - 通过「追加资金」按钮录入新增资金，并可为资金设置未来生效日期；在生效前不会影响今年的收益率统计。
+  - 资金页底部新增「资金追加记录」表格，分页呈现全部追加记录，并为未来生效的条目显示“待生效”标签，方便回溯审计。
   - 删除时会检查至少保留一个资金组，文案已国际化。
 - **纳税 (Tax)**
   - 自动筛选未纳税的卖出交易。
@@ -168,6 +171,7 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 - `transactions.json`：交易流水，后端在接收到首个请求时自动创建。
 - `funding_groups.json`：资金组配置，初次运行会生成「Default JPY / Default USD」。
 - `tax_settlements.json`：纳税记录，由纳税 API 自动维护。
+- `capital_adjustments.json`：记录每个资金组的追加资金及生效日期。
 - `kabumemo.db`：SQLite 镜像，与 JSON 文件保持完全同步，可用于结构化查询或第三方分析工具。
 - `data/backups/`：预留备份目录，后续会提供导入导出脚本。
 
@@ -192,6 +196,7 @@ python backend/scripts/check_data_sync.py --data-dir ./data --verbose
 
 ## 今日更新 · 2025-10-22
 
+- **资金追加记录表**：后端开放 `/api/funding-groups/capital` 接口并完善测试，前端资金页新增分页表格与「待生效」标签，完整展示所有资金追加记录，方便追踪每一笔变动。
 - **一轮收益率分析**：新增 `POST /api/transactions/round-yield` 接口与 `compute_round_trip_yield` 服务，自动匹配买卖交易并返回毛利、净利、税费影响与年化收益率；Pydantic 模型和后端测试同步扩充，覆盖成功与校验失败场景。
 - **交易页增强**：引入「一轮收益」模式，提供多选复选框、实时汇总卡片、校验提示以及展示全部指标的弹窗；即便校验未通过也可点击计算按钮，警告会通过全局通知条统一显示。
 - **体验与多语言打磨**：统一按钮尺寸和配色、重排提示卡片，并补齐中英日三语文案，确保只有在用户明确点击计算后才推送辅助提示。

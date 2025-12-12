@@ -11,6 +11,7 @@ from ..models.schemas import (
     Currency,
     FundSnapshot,
     FundSnapshots,
+    FundingCapitalAdjustment,
     FundingGroup,
     Market,
     Position,
@@ -143,6 +144,7 @@ def compute_fund_snapshots(
     transactions: Iterable[Transaction],
     funding_groups: Iterable[FundingGroup],
     tax_settlements: Iterable[TaxSettlementRecord] | None = None,
+    capital_adjustments: Iterable[FundingCapitalAdjustment] | None = None,
 ) -> FundSnapshots:
     group_lookup = {group.name: group for group in funding_groups}
     sorted_transactions = [
@@ -153,6 +155,12 @@ def compute_fund_snapshots(
         )
     ]
     settlements = list(tax_settlements or [])
+    adjustments = list(capital_adjustments or [])
+    adjustments_by_group: dict[str, list[FundingCapitalAdjustment]] = defaultdict(list)
+    for adjustment in adjustments:
+        adjustments_by_group[adjustment.funding_group].append(adjustment)
+    for entries in adjustments_by_group.values():
+        entries.sort(key=lambda item: (item.effective_date, item.id))
 
     today = date.today()
     last_year_end = date(today.year - 1, 12, 31)
@@ -161,6 +169,7 @@ def compute_fund_snapshots(
     def calculate_state(until: date | None) -> dict[str, dict[str, float]]:
         cash_flows: defaultdict[str, float] = defaultdict(float)
         inventories: dict[str, dict[str, dict[str, float]]] = {}
+        cutoff = until or today
 
         for tx in sorted_transactions:
             if until and tx.trade_date > until:
@@ -208,7 +217,13 @@ def compute_fund_snapshots(
         state: dict[str, dict[str, float]] = {}
         for name, group in group_lookup.items():
             delta = cash_flows.get(name, 0.0)
-            cash_balance = group.initial_amount + delta
+            contributions = sum(
+                adjustment.amount
+                for adjustment in adjustments_by_group.get(name, [])
+                if adjustment.effective_date <= cutoff
+            )
+            base_amount = group.initial_amount + contributions
+            cash_balance = base_amount + delta
             holdings = inventories.get(name, {})
             holding_cost = sum(record["total_cost"] for record in holdings.values())
             current_total = cash_balance + holding_cost
@@ -216,6 +231,7 @@ def compute_fund_snapshots(
                 "cash_balance": cash_balance,
                 "holding_cost": holding_cost,
                 "current_total": current_total,
+                "contributions": contributions,
             }
         return state
 
@@ -237,13 +253,16 @@ def compute_fund_snapshots(
         current_year_ratio = safe_ratio(current_year_pl, last_year_metrics["current_total"])
         previous_year_ratio = safe_ratio(previous_year_pl, prev_year_metrics["current_total"])
 
-        total_pl = final_metrics["current_total"] - group.initial_amount
+        total_pl = final_metrics["current_total"] - (
+            group.initial_amount + final_metrics["contributions"]
+        )
+        display_initial = group.initial_amount + final_metrics["contributions"]
 
         snapshots.append(
             FundSnapshot(
                 name=name,
                 currency=group.currency,
-                initial_amount=round(group.initial_amount, 2),
+                initial_amount=round(display_initial, 2),
                 cash_balance=round(final_metrics["cash_balance"], 2),
                 holding_cost=round(final_metrics["holding_cost"], 2),
                 current_total=round(final_metrics["current_total"], 2),

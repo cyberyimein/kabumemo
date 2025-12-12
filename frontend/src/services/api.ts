@@ -1,14 +1,16 @@
 import type {
   FundSnapshot,
   FundSnapshotsResponse,
+  FundingCapitalAdjustment,
+  FundingCapitalAdjustmentRequest,
   FundingGroup,
   FundingGroupUpdate,
   HealthResponse,
   Position,
   RoundTripYieldRequest,
   RoundTripYieldResponse,
-  TaxSettlementRequest,
   TaxSettlementRecord,
+  TaxSettlementRequest,
   TaxSettlementUpdate,
   Transaction,
   TransactionCreate,
@@ -133,6 +135,23 @@ export function deleteFundingGroup(name: string): Promise<void> {
   return request<void>(`/funding-groups/${encodeURIComponent(name)}`, {
     method: "DELETE"
   });
+}
+
+export function addFundingCapital(
+  payload: FundingCapitalAdjustmentRequest
+): Promise<FundingCapitalAdjustment> {
+  const { funding_group, ...body } = payload;
+  return request<FundingCapitalAdjustment>(
+    `/funding-groups/${encodeURIComponent(funding_group)}/capital`,
+    {
+      method: "POST",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export function getCapitalAdjustments(): Promise<FundingCapitalAdjustment[]> {
+  return request<FundingCapitalAdjustment[]>("/funding-groups/capital");
 }
 
 // Tax settlements ----------------------------------------------------------------

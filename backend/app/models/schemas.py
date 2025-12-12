@@ -35,6 +35,21 @@ class FundingGroupUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class FundingCapitalAdjustmentBase(BaseModel):
+    amount: float = Field(..., gt=0.0)
+    effective_date: date
+    notes: Optional[str] = None
+
+
+class FundingCapitalAdjustmentCreate(FundingCapitalAdjustmentBase):
+    funding_group: str = Field(..., min_length=1)
+
+
+class FundingCapitalAdjustment(FundingCapitalAdjustmentBase):
+    id: str
+    funding_group: str
+
+
 class TransactionBase(BaseModel):
     trade_date: date = Field(default_factory=date.today)
     symbol: str = Field(..., min_length=1)

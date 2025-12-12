@@ -247,6 +247,66 @@ def test_transaction_lifecycle(client: TestClient):
     assert delete_again.status_code == 404
 
 
+def test_capital_additions_respected(client: TestClient, monkeypatch):
+    from datetime import date as real_date
+
+    import app.services.analytics as analytics
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):  # type: ignore[override]
+            return cls(2025, 12, 15)
+
+    monkeypatch.setattr(analytics, "date", FixedDate)
+
+    future_payload = {
+        "amount": 50000,
+        "effective_date": "2026-01-01",
+        "notes": "next year top-up",
+    }
+    resp_future = client.post("/api/funding-groups/Default%20JPY/capital", json=future_payload)
+    assert resp_future.status_code == 201, resp_future.text
+
+    funds_future = client.get("/api/funds").json()
+    future_default = next(item for item in funds_future["funds"] if item["name"] == "Default JPY")
+    assert future_default["initial_amount"] == 0
+    assert future_default["cash_balance"] == 0
+    assert future_default["current_year_pl"] == 0
+
+    current_payload = {
+        "amount": 100000,
+        "effective_date": "2025-06-01",
+        "notes": "mid-year contribution",
+    }
+    resp_current = client.post("/api/funding-groups/Default%20JPY/capital", json=current_payload)
+    assert resp_current.status_code == 201, resp_current.text
+
+    funds_current = client.get("/api/funds").json()
+    current_default = next(item for item in funds_current["funds"] if item["name"] == "Default JPY")
+    assert current_default["initial_amount"] == 100000
+    assert current_default["cash_balance"] == 100000
+    assert current_default["total_pl"] == 0
+    assert current_default["current_year_pl"] == 100000
+
+    aggregated = next(item for item in funds_current["aggregated"] if item["currency"] == "JPY")
+    assert aggregated["initial_amount"] >= 100000
+    assert aggregated["current_year_pl"] == 100000
+
+    repository = getattr(client, "repository")
+    json_records = repository.list_capital_adjustments()
+    sqlite_records = repository.list_capital_adjustments_from_sqlite()
+    assert [r.model_dump(mode="json") for r in json_records] == [
+        r.model_dump(mode="json") for r in sqlite_records
+    ]
+
+    log_resp = client.get("/api/funding-groups/capital")
+    assert log_resp.status_code == 200
+    history = log_resp.json()
+    assert len(history) == 2
+    assert history[0]["effective_date"] == "2025-06-01"
+    assert history[1]["effective_date"] == "2026-01-01"
+
+
 def test_positions_include_pending_sell():
     from datetime import date
 

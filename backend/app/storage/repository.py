@@ -9,12 +9,14 @@ from uuid import uuid4
 
 from ..models.schemas import (
     Currency,
+    FundingCapitalAdjustment,
+    FundingCapitalAdjustmentCreate,
     FundingGroup,
     FundingGroupUpdate,
+    TaxSettlementRecord,
     TaxStatus,
     Transaction,
     TransactionCreate,
-    TaxSettlementRecord,
 )
 from .sqlite_storage import SQLiteStorage
 
@@ -33,10 +35,12 @@ class LocalDataRepository:
         self._transactions_path = self.base_path / "transactions.json"
         self._funding_groups_path = self.base_path / "funding_groups.json"
         self._tax_settlements_path = self.base_path / "tax_settlements.json"
+        self._capital_adjustments_path = self.base_path / "capital_adjustments.json"
         for path in (
             self._transactions_path,
             self._funding_groups_path,
             self._tax_settlements_path,
+            self._capital_adjustments_path,
         ):
             if not path.exists():
                 path.write_text("[]", encoding="utf-8")
@@ -50,9 +54,11 @@ class LocalDataRepository:
         transactions = self.list_transactions()
         groups = self.list_funding_groups()
         settlements = self.list_tax_settlements()
+        capital_adjustments = self.list_capital_adjustments()
         self.sqlite.replace_transactions(transactions)
         self.sqlite.replace_funding_groups(groups)
         self.sqlite.replace_tax_settlements(settlements)
+        self.sqlite.replace_capital_adjustments(capital_adjustments)
 
     def sync_sqlite_from_json(self) -> None:
         """Public helper to mirror JSON source data into SQLite."""
@@ -307,4 +313,36 @@ class LocalDataRepository:
             lambda item: item.model_dump(mode="json"),
             self.sqlite.replace_tax_settlements,
             lambda payload: TaxSettlementRecord(**payload),
+        )
+
+    # Capital adjustments ---------------------------------------------------------
+    def list_capital_adjustments(self) -> list[FundingCapitalAdjustment]:
+        payload = json.loads(self._capital_adjustments_path.read_text(encoding="utf-8") or "[]")
+        records = [FundingCapitalAdjustment(**item) for item in payload]
+        return sorted(records, key=lambda item: (item.effective_date, item.id))
+
+    def list_capital_adjustments_from_sqlite(self) -> list[FundingCapitalAdjustment]:
+        return self.sqlite.load_capital_adjustments()
+
+    def list_capital_adjustments_for_group(self, name: str) -> list[FundingCapitalAdjustment]:
+        return [item for item in self.list_capital_adjustments() if item.funding_group == name]
+
+    def add_capital_adjustment(
+        self, payload: FundingCapitalAdjustmentCreate
+    ) -> FundingCapitalAdjustment:
+        record = FundingCapitalAdjustment(id=str(uuid4()), **payload.model_dump())
+        records = self.list_capital_adjustments()
+        records.append(record)
+        self._write_capital_adjustments(records)
+        return record
+
+    def _write_capital_adjustments(
+        self, adjustments: Iterable[FundingCapitalAdjustment]
+    ) -> None:
+        self._write_with_mirror(
+            self._capital_adjustments_path,
+            adjustments,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_capital_adjustments,
+            lambda payload: FundingCapitalAdjustment(**payload),
         )

@@ -4,19 +4,22 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from ..models.schemas import (
     FundSnapshots,
+    FundingCapitalAdjustment,
+    FundingCapitalAdjustmentBase,
+    FundingCapitalAdjustmentCreate,
     FundingGroup,
     FundingGroupUpdate,
     HealthResponse,
     Position,
-    TaxSettlementRequest,
-    TaxSettlementRecord,
-    TaxSettlementUpdate,
     RoundTripYieldRequest,
     RoundTripYieldResponse,
+    TaxSettlementRecord,
+    TaxSettlementRequest,
+    TaxSettlementUpdate,
+    TaxStatus,
     Transaction,
     TransactionCreate,
     TransactionUpdate,
-    TaxStatus,
 )
 from ..services.analytics import (
     compute_fund_snapshots,
@@ -167,7 +170,8 @@ def get_funds() -> FundSnapshots:
     transactions = repository.list_transactions()
     groups = repository.list_funding_groups()
     settlements = repository.list_tax_settlements()
-    return compute_fund_snapshots(transactions, groups, settlements)
+    adjustments = repository.list_capital_adjustments()
+    return compute_fund_snapshots(transactions, groups, settlements, adjustments)
 
 
 @router.get("/funding-groups", response_model=list[FundingGroup])
@@ -202,6 +206,36 @@ def delete_funding_group(name: str) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/funding-groups/{name}/capital",
+    response_model=FundingCapitalAdjustment,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_funding_capital(
+    name: str, payload: FundingCapitalAdjustmentBase
+) -> FundingCapitalAdjustment:
+    try:
+        repository.get_funding_group(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    create_payload = FundingCapitalAdjustmentCreate(
+        funding_group=name,
+        amount=payload.amount,
+        effective_date=payload.effective_date,
+        notes=payload.notes,
+    )
+    return repository.add_capital_adjustment(create_payload)
+
+
+@router.get(
+    "/funding-groups/capital",
+    response_model=list[FundingCapitalAdjustment],
+)
+def list_capital_adjustments() -> list[FundingCapitalAdjustment]:
+    return repository.list_capital_adjustments()
 
 
 @router.get("/tax/settlements", response_model=list[TaxSettlementRecord])

@@ -155,6 +155,7 @@ The FastAPI server listens on `0.0.0.0:8000` inside the container; the `-p` flag
 | POST   | `/api/funding-groups`                | Create or overwrite a funding group                                    |
 | PATCH  | `/api/funding-groups/{name}`         | Update a group’s currency, initial capital, or notes                   |
 | DELETE | `/api/funding-groups/{name}`         | Delete a group (at least one must remain)                              |
+| POST   | `/api/funding-groups/{name}/capital` | Schedule additional capital with an effective date per funding group   |
 | POST   | `/api/tax/settlements`               | Record tax settlements, updating both funds and tax status             |
 
 Every endpoint returns JSON, with errors exposing a `detail` field. `tests/test_api.py` exercises critical flows such as buying/selling, tax settlement, and deletion.
@@ -174,6 +175,8 @@ The UI uses tabs to organize primary workflows:
 - **Funds & Groups**
   - Manage funding groups (create, edit, delete) and visualize detailed fund snapshots with year-over-year metrics.
   - View currency-level aggregates to compare overall cash, holdings, and profitability across groups, now with an inline USD→JPY exchange-rate input that converts the merged summary into JPY in real time.
+  - Add capital injections with a specific effective date; future-dated contributions are stored but excluded from the current-year yield until the date arrives.
+  - Browse a paginated capital addition log that lists every contribution, highlights future-dated entries, and mirrors the backend’s `/funding-groups/capital` feed for auditability.
   - Deletion checks that at least one group remains; all copy is localized.
 - **Tax**
   - Automatically lists sell trades whose tax status is still pending.
@@ -186,6 +189,7 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 - `transactions.json`: Transaction history, created on first API use.
 - `funding_groups.json`: Funding group definitions; default JPY and USD groups are generated on first run.
 - `tax_settlements.json`: Maintained by the tax settlement API.
+- `capital_adjustments.json`: Effective-dated capital additions per funding group.
 - `kabumemo.db`: SQLite mirror that stays in lockstep with the JSON files and powers structured queries or external tooling.
 - `data/backups/`: Reserved for future backup tooling.
 
@@ -210,6 +214,7 @@ python backend/scripts/check_data_sync.py --data-dir ./data --verbose
 
 ## Recent Work — 2025-10-22
 
+- **Capital history log**: Added `/api/funding-groups/capital`, expanded the tests, and exposed a localized table on the Funds tab with pagination plus scheduled/future badges so every addition stays visible.
 - **Round-trip yield analytics**: Added a dedicated FastAPI route (`POST /api/transactions/round-yield`) and the underlying `compute_round_trip_yield` service to reconcile matching buy/sell transactions, surface gross/net profit, tax impact, and annualized returns. Expanded Pydantic schemas and backend tests to cover happy path and validation failures.
 - **Trades tab enhancements**: Introduced “Round Trip Yield” mode with multi-select checkboxes, a live selection summary card, validation messaging, and an analytics modal that highlights all computed metrics. The calculate button remains accessible even when selections are invalid, while warnings are routed through the global notification bar.
 - **UX + localization polish**: Refreshed button sizing, color palette, and card layout, localized all new copy in English/Japanese/Chinese, and ensured assistive technologies receive alerts only after an explicit calculation attempt.
