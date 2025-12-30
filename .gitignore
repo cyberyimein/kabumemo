@@ -71,11 +71,23 @@ frontend/.env.local
 *.swp
 *.swo
 
+# VS Code settings (local to your machine)
+.vscode/
+
 # Local data outputs
 data/**
 !data/.gitkeep
 *.log
 *.tmp
+
+# Local deployment artifacts (不要提交到仓库)
+kabumemo-server.tar
+kabumemo-server-*.tar
+
+# 本机专用脚本 / 文档（含具体机器路径信息，不需要公开）
+DEPLOY_MAC_SERVER.md
+genicon.py
+deploy*.sh
 
 # Coverage reports
 coverage/

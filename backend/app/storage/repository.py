@@ -28,10 +28,42 @@ class LocalDataRepository:
     """Simple JSON-backed repository for local single-user use."""
 
     def __init__(self, base_path: Path | None = None) -> None:
-        env_path = os.environ.get("KABUCOUNT_DATA_DIR")
-        base_dir = Path(env_path) if env_path else Path(__file__).resolve().parents[3] / "data"
-        self.base_path = base_path or base_dir
+        # 支持分别为 JSON 与 SQLite 配置独立路径：
+        # - KABUCOUNT_JSON_DIR：JSON 文件目录
+        # - KABUCOUNT_SQLITE_DIR：SQLite 数据库存放目录
+        # 回退逻辑：
+        # 1. 如果 base_path 显式传入，则 JSON 使用 base_path；
+        # 2. 否则如果定义了 KABUCOUNT_JSON_DIR，则 JSON 使用该目录；
+        # 3. 否则回退到：KABUCOUNT_DATA_DIR 或 项目根下的 data 目录。
+        # SQLite 默认：
+        # - 如果定义了 KABUCOUNT_SQLITE_DIR，则使用该目录；
+        # - 否则与 JSON 使用同一目录，保持向后兼容。
+        env_data_dir = os.environ.get("KABUCOUNT_DATA_DIR")
+        env_json_dir = os.environ.get("KABUCOUNT_JSON_DIR")
+        env_sqlite_dir = os.environ.get("KABUCOUNT_SQLITE_DIR")
+
+        default_base = (
+            Path(env_data_dir)
+            if env_data_dir
+            else Path(__file__).resolve().parents[3] / "data"
+        )
+
+        if base_path is not None:
+            json_base = base_path
+        elif env_json_dir:
+            json_base = Path(env_json_dir)
+        else:
+            json_base = default_base
+
+        if env_sqlite_dir:
+            sqlite_base = Path(env_sqlite_dir)
+        else:
+            sqlite_base = json_base
+
+        self.base_path = json_base
         self.base_path.mkdir(parents=True, exist_ok=True)
+        sqlite_base.mkdir(parents=True, exist_ok=True)
+
         self._transactions_path = self.base_path / "transactions.json"
         self._funding_groups_path = self.base_path / "funding_groups.json"
         self._tax_settlements_path = self.base_path / "tax_settlements.json"
@@ -45,7 +77,7 @@ class LocalDataRepository:
             if not path.exists():
                 path.write_text("[]", encoding="utf-8")
 
-        self.sqlite = SQLiteStorage(self.base_path / "kabumemo.db")
+        self.sqlite = SQLiteStorage(sqlite_base / "kabumemo.db")
         if not self.sqlite.has_data():
             self._sync_sqlite_from_files()
 

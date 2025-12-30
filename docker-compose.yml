@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: kabumemo-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # 容器内的数据目录，后端代码已经使用该环境变量
+      KABUCOUNT_DATA_DIR: /data
+      # 前端打包产物挂载到这里，由后端直接提供静态文件
+      KABUMEMO_DIST_DIR: /frontend_dist
+    volumes:
+      # Mac 上持久化数据目录（JSON + kabumemo.db），与代码完全分离
+      - ./server-data:/data
+      # 前端 dist 目录（需要先在宿主机构建好）
+      - ./frontend/dist:/frontend_dist
+    restart: unless-stopped
