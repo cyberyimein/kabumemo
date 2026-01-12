@@ -248,8 +248,18 @@ def compute_fund_snapshots(
         last_year_metrics = last_year_state[name]
         prev_year_metrics = prev_year_state[name]
 
-        current_year_pl = final_metrics["current_total"] - last_year_metrics["current_total"]
-        previous_year_pl = last_year_metrics["current_total"] - prev_year_metrics["current_total"]
+        # Remove net capital additions so realized profits are not inflated by fresh funding
+        raw_current_year_pl = final_metrics["current_total"] - last_year_metrics["current_total"]
+        current_year_contributions = (
+            final_metrics["contributions"] - last_year_metrics["contributions"]
+        )
+        current_year_pl = raw_current_year_pl - current_year_contributions
+
+        raw_previous_year_pl = last_year_metrics["current_total"] - prev_year_metrics["current_total"]
+        previous_year_contributions = (
+            last_year_metrics["contributions"] - prev_year_metrics["contributions"]
+        )
+        previous_year_pl = raw_previous_year_pl - previous_year_contributions
         current_year_ratio = safe_ratio(current_year_pl, last_year_metrics["current_total"])
         previous_year_ratio = safe_ratio(previous_year_pl, prev_year_metrics["current_total"])
 

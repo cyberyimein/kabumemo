@@ -286,11 +286,11 @@ def test_capital_additions_respected(client: TestClient, monkeypatch):
     assert current_default["initial_amount"] == 100000
     assert current_default["cash_balance"] == 100000
     assert current_default["total_pl"] == 0
-    assert current_default["current_year_pl"] == 100000
+    assert current_default["current_year_pl"] == 0
 
     aggregated = next(item for item in funds_current["aggregated"] if item["currency"] == "JPY")
     assert aggregated["initial_amount"] >= 100000
-    assert aggregated["current_year_pl"] == 100000
+    assert aggregated["current_year_pl"] == 0
 
     repository = getattr(client, "repository")
     json_records = repository.list_capital_adjustments()
