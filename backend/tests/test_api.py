@@ -30,7 +30,18 @@ def client(tmp_path, monkeypatch):
     return test_client
 
 
-def test_transaction_lifecycle(client: TestClient):
+def test_transaction_lifecycle(client: TestClient, monkeypatch):
+    from datetime import date as real_date
+
+    import app.services.analytics as analytics
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):  # type: ignore[override]
+            return cls(2025, 12, 15)
+
+    monkeypatch.setattr(analytics, "date", FixedDate)
+
     repository = getattr(client, "repository")
 
     resp = client.get("/api/funding-groups")
