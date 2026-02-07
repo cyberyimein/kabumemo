@@ -82,6 +82,9 @@
       "grossAmount": "Gross Amount",
       "fundingGroup": "Funding Group",
       "cashCurrency": "Cash Currency",
+      "crossCurrency": "Cross-currency sell",
+      "buyCurrency": "Buy currency",
+      "sellCurrency": "Sell currency",
       "taxed": "Taxed",
       "memo": "Memo"
     },
@@ -164,6 +167,10 @@
   "positions": {
     "title": "Positions",
     "description": "Calculate remaining holdings, average cost, and realized P&L from trades.",
+    "actions": {
+      "refreshQuotes": "Refresh quotes"
+    },
+    "quotesAsOf": "Quotes as of {date}",
     "activeTitle": "Active positions ({count})",
     "closedTitle": "Closed positions ({count})",
     "table": {
@@ -171,7 +178,9 @@
       "market": "Market",
       "quantity": "Quantity",
       "cost": "Average Cost",
-      "pl": "Realized P&L"
+      "pl": "Realized P&L",
+      "price": "Last Price",
+      "unrealized": "Unrealized P&L"
     },
     "groupTable": {
       "group": "Funding Group"
@@ -179,7 +188,8 @@
     "emptyActive": "No active positions",
     "emptyClosed": "No closed positions",
     "toasts": {
-      "refreshed": "Positions updated"
+      "refreshed": "Positions updated",
+      "quotesRefreshed": "Quotes updated"
     }
   },
   "funds": {
@@ -193,7 +203,7 @@
       "notes": "Notes"
     },
     "placeholders": {
-      "name": "Default JPY",
+      "name": "JPY",
       "notes": "Optional"
     },
     "submit": "Create Group",
@@ -268,6 +278,40 @@
       "empty": "No capital additions recorded yet.",
       "futureBadge": "Scheduled"
     },
+    "fx": {
+      "title": "FX Exchanges",
+      "description": "Log manual JPY/USD conversions and link them to trades when needed.",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "submit": "Add FX",
+      "missingHint": "These trades still need a linked FX record:",
+      "fields": {
+        "date": "Exchange Date",
+        "from": "From",
+        "to": "To",
+        "amount": "From Amount",
+        "rate": "Rate (JPY/USD)",
+        "bind": "Bind Trade (optional)",
+        "unbound": "No binding",
+        "notes": "Notes"
+      },
+      "table": {
+        "date": "Date",
+        "from": "From",
+        "fromAmount": "From Amount",
+        "to": "To",
+        "toAmount": "To Amount",
+        "rate": "Rate",
+        "transaction": "Trade",
+        "actions": "Actions"
+      },
+      "empty": "No FX exchanges yet.",
+      "confirmDelete": "Delete this FX exchange?",
+      "toasts": {
+        "created": "FX exchange added",
+        "deleted": "FX exchange deleted"
+      }
+    },
     "confirm": {
       "mustKeepOne": "Keep at least one funding group.",
       "delete": "Delete funding group {name}?"
@@ -305,14 +349,12 @@
     },
     "fields": {
       "amount": "Tax Amount",
-      "amountJPY": "Tax Amount (JPY)",
       "currency": "Tax Currency",
-      "rate": "Exchange Rate (JPY/USD)",
-      "converted": "Converted USD (Optional)"
+      "payerGroup": "Payer Funding Group",
+      "rate": "Rate (JPY/USD)",
+      "balanceNeeded": "USD Needed to Balance"
     },
-    "convertedHint": "Automatic conversion provided; override if needed.",
-    "autoConversion": "Auto: {auto}",
-    "submitAmount": "Submitting: {value}",
+    "balanceHint": "Estimated USD to sell at this rate: {value}",
     "submit": "Record Tax",
     "submitUpdate": "Save Changes",
     "cancelEdit": "Cancel Editing",
@@ -327,6 +369,7 @@
       "symbol": "Stock / Trade",
       "amount": "Tax Amount",
       "converted": "JPY Equivalent",
+      "balance": "USD Balance",
       "fundingGroup": "Funding Group",
       "actions": "Actions"
     },

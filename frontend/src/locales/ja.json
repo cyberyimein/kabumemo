@@ -82,6 +82,9 @@
       "grossAmount": "総額",
       "fundingGroup": "資金グループ",
       "cashCurrency": "資金通貨",
+      "crossCurrency": "クロス通貨の売却",
+      "buyCurrency": "買付通貨",
+      "sellCurrency": "売却通貨",
       "taxed": "納税区分",
       "memo": "メモ"
     },
@@ -164,6 +167,10 @@
   "positions": {
     "title": "ポジション",
     "description": "取引から残高、平均取得単価、実現損益を計算します。",
+    "actions": {
+      "refreshQuotes": "株価更新"
+    },
+    "quotesAsOf": "株価更新日：{date}",
     "activeTitle": "保有中 ({count})",
     "closedTitle": "解消済み ({count})",
     "table": {
@@ -171,7 +178,9 @@
       "market": "市場",
       "quantity": "数量",
       "cost": "平均取得単価",
-      "pl": "実現損益"
+      "pl": "実現損益",
+      "price": "現在値",
+      "unrealized": "含み損益"
     },
     "groupTable": {
       "group": "資金グループ"
@@ -179,7 +188,8 @@
     "emptyActive": "保有中のポジションがありません",
     "emptyClosed": "解消済みのポジションがありません",
     "toasts": {
-      "refreshed": "ポジションデータを更新しました"
+      "refreshed": "ポジションデータを更新しました",
+      "quotesRefreshed": "株価を更新しました"
     }
   },
   "funds": {
@@ -193,7 +203,7 @@
       "notes": "メモ"
     },
     "placeholders": {
-      "name": "Default JPY",
+      "name": "JPY",
       "notes": "任意"
     },
     "submit": "資金グループを作成",
@@ -268,6 +278,40 @@
       "empty": "資金追加の記録がまだありません。",
       "futureBadge": "予定"
     },
+    "fx": {
+      "title": "為替の記録",
+      "description": "手動で USD/JPY の換算を記録し、必要に応じて取引に紐づけます。",
+      "expand": "展開",
+      "collapse": "折りたたむ",
+      "submit": "為替を追加",
+      "missingHint": "以下の取引は為替の紐づけが必要です：",
+      "fields": {
+        "date": "換算日",
+        "from": "換算元",
+        "to": "換算先",
+        "amount": "換算元金額",
+        "rate": "為替レート (JPY/USD)",
+        "bind": "取引に紐づけ (任意)",
+        "unbound": "紐づけなし",
+        "notes": "メモ"
+      },
+      "table": {
+        "date": "日付",
+        "from": "換算元",
+        "fromAmount": "換算元金額",
+        "to": "換算先",
+        "toAmount": "換算先金額",
+        "rate": "為替レート",
+        "transaction": "取引",
+        "actions": "操作"
+      },
+      "empty": "為替の記録がありません。",
+      "confirmDelete": "この為替記録を削除しますか？",
+      "toasts": {
+        "created": "為替記録を追加しました",
+        "deleted": "為替記録を削除しました"
+      }
+    },
     "confirm": {
       "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
       "delete": "資金グループ {name} を削除しますか？"
@@ -305,14 +349,12 @@
     },
     "fields": {
       "amount": "納税額",
-      "amountJPY": "納税額 (JPY)",
       "currency": "納税通貨",
+      "payerGroup": "納税用資金グループ",
       "rate": "為替レート (JPY/USD)",
-      "converted": "換算USD (任意)"
+      "balanceNeeded": "バランスに必要な売却USD"
     },
-    "convertedHint": "自動換算されますが、必要に応じて上書きできます。",
-    "autoConversion": "自動換算：{auto}",
-    "submitAmount": "送信額：{value}",
+    "balanceHint": "このレートで必要な売却額：{value}",
     "submit": "納税を記録",
     "submitUpdate": "変更を保存",
     "cancelEdit": "編集をキャンセル",
@@ -327,6 +369,7 @@
       "symbol": "銘柄 / 取引",
       "amount": "納税額",
       "converted": "円換算",
+      "balance": "バランス用USD",
       "fundingGroup": "資金グループ",
       "actions": "操作"
     },

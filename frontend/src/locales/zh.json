@@ -82,6 +82,9 @@
       "grossAmount": "总金额",
       "fundingGroup": "资金组",
       "cashCurrency": "资金货币",
+      "crossCurrency": "跨币种卖出",
+      "buyCurrency": "买入货币",
+      "sellCurrency": "卖出货币",
       "taxed": "纳税标记",
       "memo": "备注"
     },
@@ -164,6 +167,10 @@
   "positions": {
     "title": "持仓表",
     "description": "根据交易自动计算剩余仓位、平均成本与落地盈亏。",
+    "actions": {
+      "refreshQuotes": "刷新行情"
+    },
+    "quotesAsOf": "行情更新时间：{date}",
     "activeTitle": "当前持仓 ({count})",
     "closedTitle": "历史持仓 ({count})",
     "table": {
@@ -171,7 +178,9 @@
       "market": "市场",
       "quantity": "数量",
       "cost": "平均成本",
-      "pl": "落地盈亏"
+      "pl": "落地盈亏",
+      "price": "现价",
+      "unrealized": "浮动盈亏"
     },
     "groupTable": {
       "group": "资金组"
@@ -179,7 +188,8 @@
     "emptyActive": "暂无持仓",
     "emptyClosed": "暂无历史持仓",
     "toasts": {
-      "refreshed": "持仓数据已更新"
+      "refreshed": "持仓数据已更新",
+      "quotesRefreshed": "行情已更新"
     }
   },
   "funds": {
@@ -193,7 +203,7 @@
       "notes": "备注"
     },
     "placeholders": {
-      "name": "Default JPY",
+      "name": "JPY",
       "notes": "可选"
     },
     "submit": "创建资金组",
@@ -268,6 +278,40 @@
       "empty": "还没有资金追加记录。",
       "futureBadge": "待生效"
     },
+    "fx": {
+      "title": "换汇记录",
+      "description": "记录日元与美元之间的手动换汇，交易绑定可用于跨币种结算。",
+      "expand": "展开",
+      "collapse": "收起",
+      "submit": "添加换汇",
+      "missingHint": "以下交易需要补充换汇记录：",
+      "fields": {
+        "date": "换汇日期",
+        "from": "换出货币",
+        "to": "换入货币",
+        "amount": "换出金额",
+        "rate": "汇率 (JPY/USD)",
+        "bind": "绑定交易 (可选)",
+        "unbound": "不绑定",
+        "notes": "备注"
+      },
+      "table": {
+        "date": "日期",
+        "from": "换出",
+        "fromAmount": "换出金额",
+        "to": "换入",
+        "toAmount": "换入金额",
+        "rate": "汇率",
+        "transaction": "绑定交易",
+        "actions": "操作"
+      },
+      "empty": "暂无换汇记录。",
+      "confirmDelete": "确定删除这条换汇记录吗？",
+      "toasts": {
+        "created": "换汇记录已添加",
+        "deleted": "换汇记录已删除"
+      }
+    },
     "confirm": {
       "mustKeepOne": "至少保留一个资金组。",
       "delete": "确定删除资金组 {name} 吗？"
@@ -305,14 +349,12 @@
     },
     "fields": {
       "amount": "纳税金额",
-      "amountJPY": "纳税金额 (JPY)",
       "currency": "纳税货币",
+      "payerGroup": "纳税资金组",
       "rate": "汇率 (JPY/USD)",
-      "converted": "折合美元 (可选)"
+      "balanceNeeded": "平衡所需卖出美元"
     },
-    "convertedHint": "默认提供自动换算，可根据实际调整",
-    "autoConversion": "自动换算：{auto}",
-    "submitAmount": "提交金额：{value}",
+    "balanceHint": "按照当前汇率预计需卖出：{value}",
   "submit": "记录纳税",
     "submitUpdate": "保存修改",
     "cancelEdit": "取消编辑",
@@ -327,6 +369,7 @@
       "symbol": "股票/交易",
       "amount": "纳税金额",
       "converted": "折合日元",
+      "balance": "平衡所需USD",
       "fundingGroup": "资金组",
       "actions": "操作"
     },

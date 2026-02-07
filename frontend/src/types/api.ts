@@ -30,6 +30,23 @@ export interface FundingCapitalAdjustment extends FundingCapitalAdjustmentPayloa
   funding_group: string;
 }
 
+export interface FxExchangeBase {
+  exchange_date: string;
+  from_currency: Currency;
+  to_currency: Currency;
+  from_amount: number;
+  rate: number;
+  notes?: string | null;
+  transaction_id?: string | null;
+}
+
+export type FxExchangeCreate = FxExchangeBase;
+
+export interface FxExchangeRecord extends FxExchangeBase {
+  id: string;
+  to_amount: number;
+}
+
 export interface TransactionBase {
   trade_date: string;
   symbol: string;
@@ -37,6 +54,9 @@ export interface TransactionBase {
   gross_amount: number;
   funding_group: string;
   cash_currency: Currency;
+  cross_currency: boolean;
+  buy_currency?: Currency | null;
+  sell_currency?: Currency | null;
   market: Market;
   taxed: TaxStatus;
   memo?: string | null;
@@ -84,6 +104,8 @@ export interface PositionBreakdown {
   quantity: number;
   average_cost: number;
   realized_pl: number;
+  current_price?: number | null;
+  unrealized_pl?: number | null;
 }
 
 export interface PositionGroupBreakdown {
@@ -92,6 +114,8 @@ export interface PositionGroupBreakdown {
   quantity: number;
   average_cost: number;
   realized_pl: number;
+  current_price?: number | null;
+  unrealized_pl?: number | null;
 }
 
 export interface Position {
@@ -99,6 +123,19 @@ export interface Position {
   market: Market;
   breakdown: PositionBreakdown[];
   group_breakdown: PositionGroupBreakdown[];
+}
+
+export interface QuoteRecord {
+  symbol: string;
+  market: Market;
+  price: number;
+  currency: Currency;
+  as_of: string;
+}
+
+export interface QuoteSnapshot {
+  as_of: string;
+  records: QuoteRecord[];
 }
 
 export interface FundSnapshot {
@@ -140,6 +177,7 @@ export interface TaxSettlementRequest {
   amount: number;
   currency: Currency;
   exchange_rate?: number;
+  balance_exchange_rate?: number;
 }
 
 export interface TaxSettlementRecord {
@@ -150,6 +188,8 @@ export interface TaxSettlementRecord {
   currency: Currency;
   exchange_rate?: number | null;
   jpy_equivalent: number;
+  balance_exchange_rate?: number | null;
+  balance_usd_required?: number | null;
   recorded_at: string;
 }
 
@@ -157,6 +197,7 @@ export interface TaxSettlementUpdate {
   amount?: number;
   funding_group?: string;
   exchange_rate?: number;
+  balance_exchange_rate?: number;
 }
 
 export interface HealthResponse {

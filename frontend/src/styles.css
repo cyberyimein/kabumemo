@@ -308,6 +308,18 @@ a {
   margin-bottom: 1.25rem;
 }
 
+@media (max-width: 768px) {
+  .app-shell {
+    padding: 1.25rem;
+    gap: 1.25rem;
+  }
+
+  .tab-pill {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
+
 .tab-pill {
   position: relative;
   padding: 0.55rem 1.1rem;

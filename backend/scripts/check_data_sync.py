@@ -98,6 +98,18 @@ def main() -> None:
             sqlite_items=repository.list_tax_settlements_from_sqlite(),
             key_field="id",
         ),
+        diff_collections(
+            label="fx exchanges",
+            json_items=repository.list_fx_exchanges(),
+            sqlite_items=repository.list_fx_exchanges_from_sqlite(),
+            key_field="id",
+        ),
+        diff_collections(
+            label="quotes",
+            json_items=repository.list_quotes(),
+            sqlite_items=repository.list_quotes_from_sqlite(),
+            key_field="symbol",
+        ),
     ]
 
     clean = all(item["clean"] for item in results)

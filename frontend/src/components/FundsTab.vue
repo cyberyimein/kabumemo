@@ -290,6 +290,136 @@
       />
     </div>
 
+    <div class="surface fx-panel">
+      <header class="fx-header">
+        <div>
+          <h3>{{ t("funds.fx.title") }}</h3>
+          <p class="fx-description">{{ t("funds.fx.description") }}</p>
+        </div>
+        <button
+          type="button"
+          class="ghost-btn"
+          @click="fxPanelOpen = !fxPanelOpen"
+        >
+          {{ fxPanelOpen ? t("funds.fx.collapse") : t("funds.fx.expand") }}
+        </button>
+      </header>
+
+      <div v-if="fxPanelOpen" class="fx-body">
+        <div v-if="fxMissingRows.length" class="fx-alert">
+          <p>{{ t("funds.fx.missingHint") }}</p>
+          <ul>
+            <li v-for="row in fxMissingRows" :key="row.id">
+              {{ row.label }}
+            </li>
+          </ul>
+        </div>
+
+        <form class="fx-form" @submit.prevent="handleFxSubmit">
+          <div class="form-grid">
+            <label>
+              <span>{{ t("funds.fx.fields.date") }}</span>
+              <input v-model="fxForm.exchange_date" type="date" required />
+            </label>
+            <label>
+              <span>{{ t("funds.fx.fields.from") }}</span>
+              <BaseSelect v-model="fxForm.from_currency" :options="currencyOptions" />
+            </label>
+            <label>
+              <span>{{ t("funds.fx.fields.to") }}</span>
+              <BaseSelect v-model="fxForm.to_currency" :options="currencyOptions" />
+            </label>
+            <label>
+              <span>{{ t("funds.fx.fields.amount") }}</span>
+              <input
+                v-model.number="fxForm.from_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+              />
+            </label>
+            <label>
+              <span>{{ t("funds.fx.fields.rate") }}</span>
+              <input
+                v-model.number="fxForm.rate"
+                type="number"
+                step="0.0001"
+                min="0"
+                required
+              />
+            </label>
+            <label>
+              <span>{{ t("funds.fx.fields.bind") }}</span>
+              <select v-model="fxForm.transaction_id">
+                <option value="">{{ t("funds.fx.fields.unbound") }}</option>
+                <option
+                  v-for="item in fxRequiredTransactions"
+                  :key="item.id"
+                  :value="item.id"
+                >
+                  {{ item.label }}
+                </option>
+              </select>
+            </label>
+            <label class="full">
+              <span>{{ t("funds.fx.fields.notes") }}</span>
+              <textarea v-model.trim="fxForm.notes" rows="2"></textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary-btn">
+              {{ t("funds.fx.submit") }}
+            </button>
+          </div>
+        </form>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{{ t("funds.fx.table.date") }}</th>
+                <th>{{ t("funds.fx.table.from") }}</th>
+                <th class="numeric">{{ t("funds.fx.table.fromAmount") }}</th>
+                <th>{{ t("funds.fx.table.to") }}</th>
+                <th class="numeric">{{ t("funds.fx.table.toAmount") }}</th>
+                <th class="numeric">{{ t("funds.fx.table.rate") }}</th>
+                <th>{{ t("funds.fx.table.transaction") }}</th>
+                <th>{{ t("funds.fx.table.actions") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!fxExchanges.length">
+                <td colspan="8" class="empty">{{ t("funds.fx.empty") }}</td>
+              </tr>
+              <tr v-for="item in fxExchanges" :key="item.id">
+                <td>{{ item.exchange_date }}</td>
+                <td>{{ currencyLabel(item.from_currency) }}</td>
+                <td class="numeric">
+                  {{ formatCurrency(item.from_amount, item.from_currency) }}
+                </td>
+                <td>{{ currencyLabel(item.to_currency) }}</td>
+                <td class="numeric">
+                  {{ formatCurrency(item.to_amount, item.to_currency) }}
+                </td>
+                <td class="numeric">{{ item.rate }}</td>
+                <td>{{ item.transaction_id || "-" }}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="danger-btn"
+                    @click="confirmDeleteFx(item.id)"
+                  >
+                    {{ t("common.actions.delete") }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="surface">
       <div class="capital-history-header">
         <div>
@@ -417,10 +547,13 @@ import { usePagination } from "@/composables/usePagination";
 import type {
   AggregatedFundSnapshot,
   Currency,
+  FxExchangeCreate,
+  FxExchangeRecord,
   FundSnapshot,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
   FundingGroup,
+  Transaction,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
 
@@ -429,6 +562,8 @@ const props = defineProps<{
   funds: FundSnapshot[];
   aggregated: AggregatedFundSnapshot[];
   capitalAdjustments: FundingCapitalAdjustment[];
+  fxExchanges: FxExchangeRecord[];
+  transactions: Transaction[];
 }>();
 
 type CapitalAdditionEvent = {
@@ -441,6 +576,8 @@ const emit = defineEmits<{
   (e: "delete", name: string): void;
   (e: "refresh"): void;
   (e: "add-capital", payload: CapitalAdditionEvent): void;
+  (e: "add-fx", payload: FxExchangeCreate): void;
+  (e: "delete-fx", exchangeId: string): void;
 }>();
 
 const { t } = useI18n();
@@ -473,6 +610,7 @@ const capitalForm = reactive<CapitalFormState>({
 });
 
 const capitalPending = ref(false);
+const fxPanelOpen = ref(true);
 const capitalValid = computed(() => {
   return (
     capitalDialog.group !== null &&
@@ -493,12 +631,63 @@ const currencyOptions = computed(() => [
   },
 ]);
 
+type FxFormState = {
+  exchange_date: string;
+  from_currency: Currency;
+  to_currency: Currency;
+  from_amount: number;
+  rate: number;
+  transaction_id: string;
+  notes: string;
+};
+
+const fxForm = reactive<FxFormState>({
+  exchange_date: todayIso(),
+  from_currency: "JPY",
+  to_currency: "USD",
+  from_amount: 0,
+  rate: 0,
+  transaction_id: "",
+  notes: "",
+});
+
 const fundingGroupCurrency = computed<Record<string, Currency>>(() => {
   return props.fundingGroups.reduce((acc, group) => {
     acc[group.name] = group.currency;
     return acc;
   }, {} as Record<string, Currency>);
 });
+
+const marketCurrency = (market: Transaction["market"]): Currency =>
+  market === "US" ? "USD" : "JPY";
+
+const fxLookup = computed(() => {
+  const map = new Map<string, FxExchangeRecord>();
+  props.fxExchanges.forEach((item) => {
+    if (item.transaction_id) {
+      map.set(item.transaction_id, item);
+    }
+  });
+  return map;
+});
+
+const fxRequiredTransactions = computed(() => {
+  return props.transactions
+    .filter((tx) => {
+      return tx.cross_currency && !fxLookup.value.has(tx.id);
+    })
+    .map((tx) => ({
+      id: tx.id,
+      label: `${tx.trade_date} ${tx.symbol} · ${tx.id.slice(0, 6)}`,
+    }));
+});
+
+const fxMissingRows = computed(() =>
+  fxRequiredTransactions.value.map((item) => ({
+    id: item.id,
+    label: item.label,
+  }))
+);
 
 const {
   page: groupsPage,
@@ -874,6 +1063,35 @@ function handleCapitalSubmit() {
   });
 }
 
+function handleFxSubmit() {
+  if (fxForm.from_currency === fxForm.to_currency) {
+    return;
+  }
+  const payload: FxExchangeCreate = {
+    exchange_date: fxForm.exchange_date,
+    from_currency: fxForm.from_currency,
+    to_currency: fxForm.to_currency,
+    from_amount: Number(fxForm.from_amount),
+    rate: Number(fxForm.rate),
+    transaction_id: fxForm.transaction_id || undefined,
+    notes: fxForm.notes?.trim() || undefined,
+  };
+  emit("add-fx", payload);
+  fxForm.exchange_date = todayIso();
+  fxForm.from_currency = "JPY";
+  fxForm.to_currency = "USD";
+  fxForm.from_amount = 0;
+  fxForm.rate = 0;
+  fxForm.transaction_id = "";
+  fxForm.notes = "";
+}
+
+function confirmDeleteFx(id: string) {
+  if (window.confirm(t("funds.fx.confirmDelete"))) {
+    emit("delete-fx", id);
+  }
+}
+
 function confirmDelete(name: string) {
   if (props.fundingGroups.length <= 1) {
     alert(t("funds.confirm.mustKeepOne"));
@@ -1005,6 +1223,49 @@ function confirmDelete(name: string) {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.fx-panel {
+  gap: 1.2rem;
+}
+
+.fx-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.fx-description {
+  margin: 0.4rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.fx-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fx-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.fx-alert {
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 111, 29, 0.3);
+  background: rgba(255, 200, 67, 0.1);
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.fx-alert ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
 }
 
 .primary-btn {
@@ -1208,6 +1469,21 @@ function confirmDelete(name: string) {
   .aggregate-controls {
     grid-template-columns: 1fr;
     gap: 0.45rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .funds-panel {
+    padding: 1.3rem;
+  }
+
+  .table-scroll table {
+    min-width: 520px;
+  }
+
+  .fx-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

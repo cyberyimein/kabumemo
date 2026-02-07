@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..models.schemas import (
@@ -9,6 +11,9 @@ from ..models.schemas import (
     FundingCapitalAdjustmentCreate,
     FundingGroup,
     FundingGroupUpdate,
+    FxExchangeCreate,
+    FxExchangeRecord,
+    QuoteSnapshot,
     HealthResponse,
     Position,
     RoundTripYieldRequest,
@@ -30,6 +35,7 @@ from ..services.analytics import (
     update_tax_settlement,
 )
 from ..storage.repository import LocalDataRepository
+from ..services.quotes import refresh_quotes_if_needed
 
 router = APIRouter(prefix="/api", tags=["kabucount"])
 repository = LocalDataRepository()
@@ -162,7 +168,12 @@ def delete_transaction(transaction_id: str) -> Response:
 @router.get("/positions", response_model=list[Position])
 def get_positions() -> list[Position]:
     transactions = repository.list_transactions()
-    return compute_positions(transactions)
+    fx_exchanges = repository.list_fx_exchanges()
+    quotes = repository.list_quotes()
+    try:
+        return compute_positions(transactions, fx_exchanges, quotes)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/funds", response_model=FundSnapshots)
@@ -171,7 +182,17 @@ def get_funds() -> FundSnapshots:
     groups = repository.list_funding_groups()
     settlements = repository.list_tax_settlements()
     adjustments = repository.list_capital_adjustments()
-    return compute_fund_snapshots(transactions, groups, settlements, adjustments)
+    fx_exchanges = repository.list_fx_exchanges()
+    try:
+        return compute_fund_snapshots(
+            transactions,
+            groups,
+            settlements,
+            adjustments,
+            fx_exchanges,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/funding-groups", response_model=list[FundingGroup])
@@ -236,6 +257,45 @@ def add_funding_capital(
 )
 def list_capital_adjustments() -> list[FundingCapitalAdjustment]:
     return repository.list_capital_adjustments()
+
+
+@router.get("/fx-exchanges", response_model=list[FxExchangeRecord])
+def list_fx_exchanges() -> list[FxExchangeRecord]:
+    return repository.list_fx_exchanges()
+
+
+@router.post(
+    "/fx-exchanges",
+    response_model=FxExchangeRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_fx_exchange(payload: FxExchangeCreate) -> FxExchangeRecord:
+    return repository.add_fx_exchange(payload)
+
+
+@router.delete(
+    "/fx-exchanges/{exchange_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_fx_exchange(exchange_id: str) -> Response:
+    try:
+        repository.delete_fx_exchange(exchange_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/quotes", response_model=QuoteSnapshot)
+def list_quotes() -> QuoteSnapshot:
+    records = repository.list_quotes()
+    as_of = records[0].as_of if records else date.today()
+    return QuoteSnapshot(as_of=as_of, records=records)
+
+
+@router.post("/quotes/refresh", response_model=QuoteSnapshot)
+def refresh_quotes(force: bool = False) -> QuoteSnapshot:
+    snapshot = refresh_quotes_if_needed(repository, force=force)
+    return snapshot
 
 
 @router.get("/tax/settlements", response_model=list[TaxSettlementRecord])

@@ -9,11 +9,13 @@ from uuid import uuid4
 from ..models.schemas import (
     AggregatedFundSnapshot,
     Currency,
+    FxExchangeRecord,
     FundSnapshot,
     FundSnapshots,
     FundingCapitalAdjustment,
     FundingGroup,
     Market,
+    QuoteRecord,
     Position,
     PositionBreakdown,
     PositionGroupBreakdown,
@@ -27,7 +29,40 @@ from ..models.schemas import (
 from ..storage.repository import LocalDataRepository
 
 
-def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
+def _market_currency(market: Market) -> Currency:
+    return Currency.USD if market == Market.US else Currency.JPY
+
+
+def _convert_with_rate(
+    *,
+    amount: float,
+    from_currency: Currency,
+    to_currency: Currency,
+    rate: float,
+) -> float:
+    if from_currency == to_currency:
+        return amount
+    if from_currency == Currency.JPY and to_currency == Currency.USD:
+        return amount / rate
+    if from_currency == Currency.USD and to_currency == Currency.JPY:
+        return amount * rate
+    return amount
+
+
+def _fx_lookup(exchanges: Iterable[FxExchangeRecord]) -> dict[str, FxExchangeRecord]:
+    return {item.transaction_id: item for item in exchanges if item.transaction_id}
+
+
+def compute_positions(
+    transactions: Iterable[Transaction],
+    fx_exchanges: Iterable[FxExchangeRecord] | None = None,
+    quotes: Iterable[QuoteRecord] | None = None,
+) -> list[Position]:
+    fx_map = _fx_lookup(fx_exchanges or [])
+    quote_map: dict[tuple[str, Market], QuoteRecord] = {
+        (quote.symbol, quote.market): quote for quote in (quotes or [])
+    }
+
     inventory: dict[str, dict[Currency, defaultdict[str, dict[str, float]]]] = defaultdict(
         lambda: defaultdict(
             lambda: defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
@@ -51,18 +86,41 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
 
     for tx in sorted_transactions:
         symbol = tx.symbol
-        currency = tx.cash_currency
+        position_currency = (
+            tx.buy_currency if tx.cross_currency and tx.buy_currency else tx.cash_currency
+        )
         markets[symbol] = tx.market
 
-        currency_groups = inventory[symbol][currency]
+        currency_groups = inventory[symbol][position_currency]
         group_record = currency_groups[tx.funding_group]
 
         total_realized = realized_totals[symbol]
-        group_realized = realized_by_group[symbol][currency]
+        group_realized = realized_by_group[symbol][position_currency]
+
+        effective_amount = tx.gross_amount
+        if tx.cross_currency and tx.cash_currency != position_currency:
+            fx_record = fx_map.get(tx.id)
+            if not fx_record:
+                raise ValueError(
+                    f"FX exchange required for transaction {tx.id} ({tx.symbol})"
+                )
+            if {
+                fx_record.from_currency,
+                fx_record.to_currency,
+            } != {tx.cash_currency, position_currency}:
+                raise ValueError(
+                    f"FX exchange currency mismatch for transaction {tx.id}"
+                )
+            effective_amount = _convert_with_rate(
+                amount=tx.gross_amount,
+                from_currency=tx.cash_currency,
+                to_currency=position_currency,
+                rate=fx_record.rate,
+            )
 
         if tx.quantity > 0:
             group_record["quantity"] += tx.quantity
-            group_record["total_cost"] += tx.gross_amount
+            group_record["total_cost"] += effective_amount
         else:
             if group_record["quantity"] <= 0:
                 # No inventory recorded for this funding group; skip to avoid invalid math
@@ -74,7 +132,7 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
                 if group_record["quantity"]
                 else 0.0
             )
-            realized_profit = tx.gross_amount - avg_cost * sell_qty
+            realized_profit = effective_amount - avg_cost * sell_qty
 
             group_record["quantity"] += tx.quantity
             group_record["total_cost"] += avg_cost * tx.quantity
@@ -85,7 +143,7 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
             else:
                 group_record["total_cost"] = max(group_record["total_cost"], 0.0)
 
-            total_realized[currency] += realized_profit
+            total_realized[position_currency] += realized_profit
             group_realized[tx.funding_group] += realized_profit
 
     positions: list[Position] = []
@@ -100,12 +158,24 @@ def compute_positions(transactions: Iterable[Transaction]) -> list[Position]:
             total_cost = sum(record["total_cost"] for record in groups.values())
             avg_cost = total_cost / total_qty if total_qty else 0.0
 
+            quote = quote_map.get((symbol, markets[symbol]))
+            current_price = (
+                quote.price if quote and quote.currency == currency else None
+            )
+            unrealized_pl = (
+                (current_price - avg_cost) * total_qty
+                if current_price is not None and total_qty
+                else None
+            )
+
             breakdown.append(
                 PositionBreakdown(
                     currency=currency,
                     quantity=round(total_qty, 4),
                     average_cost=round(avg_cost, 4),
                     realized_pl=round(total_realized_map[currency], 2),
+                    current_price=round(current_price, 4) if current_price is not None else None,
+                    unrealized_pl=round(unrealized_pl, 2) if unrealized_pl is not None else None,
                 )
             )
 
@@ -145,8 +215,10 @@ def compute_fund_snapshots(
     funding_groups: Iterable[FundingGroup],
     tax_settlements: Iterable[TaxSettlementRecord] | None = None,
     capital_adjustments: Iterable[FundingCapitalAdjustment] | None = None,
+    fx_exchanges: Iterable[FxExchangeRecord] | None = None,
 ) -> FundSnapshots:
     group_lookup = {group.name: group for group in funding_groups}
+    fx_map = _fx_lookup(fx_exchanges or [])
     sorted_transactions = [
         tx
         for _, tx in sorted(
@@ -175,6 +247,29 @@ def compute_fund_snapshots(
             if until and tx.trade_date > until:
                 continue
             amount = tx.gross_amount
+            group = group_lookup.get(tx.funding_group)
+            if not group:
+                raise ValueError(f"Funding group not found for transaction {tx.id}")
+            group_currency = group.currency
+            if tx.cross_currency:
+                fx_record = fx_map.get(tx.id)
+                if not fx_record:
+                    raise ValueError(
+                        f"FX exchange required for transaction {tx.id} ({tx.symbol})"
+                    )
+                if {
+                    fx_record.from_currency,
+                    fx_record.to_currency,
+                } != {tx.cash_currency, group_currency}:
+                    raise ValueError(
+                        f"FX exchange currency mismatch for transaction {tx.id}"
+                    )
+                amount = _convert_with_rate(
+                    amount=tx.gross_amount,
+                    from_currency=tx.cash_currency,
+                    to_currency=group_currency,
+                    rate=fx_record.rate,
+                )
             if tx.quantity > 0:
                 cash_flows[tx.funding_group] -= amount
             else:
@@ -212,7 +307,7 @@ def compute_fund_snapshots(
             for entry in settlements:
                 if until and entry.recorded_at > until:
                     continue
-                cash_flows[entry.funding_group] -= entry.amount
+                cash_flows[entry.funding_group] -= entry.jpy_equivalent or entry.amount
 
         state: dict[str, dict[str, float]] = {}
         for name, group in group_lookup.items():
@@ -346,12 +441,12 @@ def record_tax_settlement(
     transaction = repo.get_transaction(payload.transaction_id)
     if transaction.taxed == TaxStatus.YES:
         raise ValueError("Transaction already marked as taxed")
-    if transaction.funding_group != payload.funding_group:
-        raise ValueError("Funding group does not match transaction record")
+    payer_group = repo.get_funding_group(payload.funding_group)
+    if payer_group.currency != Currency.JPY:
+        raise ValueError("Tax payments must be made from a JPY funding group")
 
-    group = repo.get_funding_group(payload.funding_group)
-    if group.currency != payload.currency:
-        raise ValueError("Tax payment currency must match funding group currency")
+    if transaction.cash_currency == Currency.USD and not payload.balance_exchange_rate:
+        raise ValueError("balance_exchange_rate is required for USD transactions")
 
     repo.mark_transaction_taxed(payload.transaction_id)
     record = TaxSettlementRecord(
@@ -362,6 +457,8 @@ def record_tax_settlement(
         exchange_rate=payload.exchange_rate,
         funding_group=payload.funding_group,
         jpy_equivalent=None,
+        balance_exchange_rate=payload.balance_exchange_rate,
+        balance_usd_required=None,
         recorded_at=date.today(),
     )
     return repo.add_tax_settlement(record)
@@ -376,17 +473,20 @@ def update_tax_settlement(
     transaction = repo.get_transaction(original.transaction_id)
 
     funding_group = payload.funding_group or original.funding_group
-    if transaction.funding_group != funding_group:
-        raise ValueError("Funding group must match the transaction record")
-
     group = repo.get_funding_group(funding_group)
-    if group.currency != original.currency:
-        raise ValueError("Tax payment currency must match funding group currency")
+    if group.currency != Currency.JPY:
+        raise ValueError("Tax payments must be made from a JPY funding group")
 
     amount = payload.amount or original.amount
     exchange_rate = payload.exchange_rate
     if exchange_rate is None and original.exchange_rate is not None:
         exchange_rate = original.exchange_rate
+    balance_exchange_rate = payload.balance_exchange_rate
+    if balance_exchange_rate is None and original.balance_exchange_rate is not None:
+        balance_exchange_rate = original.balance_exchange_rate
+
+    if transaction.cash_currency == Currency.USD and not balance_exchange_rate:
+        raise ValueError("balance_exchange_rate is required for USD transactions")
 
     updated_record = TaxSettlementRecord(
         id=original.id,
@@ -396,6 +496,8 @@ def update_tax_settlement(
         exchange_rate=exchange_rate,
         funding_group=funding_group,
         jpy_equivalent=None,
+        balance_exchange_rate=balance_exchange_rate,
+        balance_usd_required=None,
         recorded_at=original.recorded_at,
     )
     return repo.update_tax_settlement(settlement_id, updated_record)

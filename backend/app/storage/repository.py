@@ -9,10 +9,13 @@ from uuid import uuid4
 
 from ..models.schemas import (
     Currency,
+    FxExchangeCreate,
+    FxExchangeRecord,
     FundingCapitalAdjustment,
     FundingCapitalAdjustmentCreate,
     FundingGroup,
     FundingGroupUpdate,
+    QuoteRecord,
     TaxSettlementRecord,
     TaxStatus,
     Transaction,
@@ -68,11 +71,15 @@ class LocalDataRepository:
         self._funding_groups_path = self.base_path / "funding_groups.json"
         self._tax_settlements_path = self.base_path / "tax_settlements.json"
         self._capital_adjustments_path = self.base_path / "capital_adjustments.json"
+        self._fx_exchanges_path = self.base_path / "fx_exchanges.json"
+        self._quotes_path = self.base_path / "quotes.json"
         for path in (
             self._transactions_path,
             self._funding_groups_path,
             self._tax_settlements_path,
             self._capital_adjustments_path,
+            self._fx_exchanges_path,
+            self._quotes_path,
         ):
             if not path.exists():
                 path.write_text("[]", encoding="utf-8")
@@ -87,10 +94,14 @@ class LocalDataRepository:
         groups = self.list_funding_groups()
         settlements = self.list_tax_settlements()
         capital_adjustments = self.list_capital_adjustments()
+        fx_exchanges = self.list_fx_exchanges()
+        quotes = self.list_quotes()
         self.sqlite.replace_transactions(transactions)
         self.sqlite.replace_funding_groups(groups)
         self.sqlite.replace_tax_settlements(settlements)
         self.sqlite.replace_capital_adjustments(capital_adjustments)
+        self.sqlite.replace_fx_exchanges(fx_exchanges)
+        self.sqlite.replace_quotes(quotes)
 
     def sync_sqlite_from_json(self) -> None:
         """Public helper to mirror JSON source data into SQLite."""
@@ -127,7 +138,17 @@ class LocalDataRepository:
     # Transactions -----------------------------------------------------------------
     def list_transactions(self) -> List[Transaction]:
         payload = json.loads(self._transactions_path.read_text(encoding="utf-8") or "[]")
-        return [Transaction(**item) for item in payload]
+        records: list[Transaction] = []
+        for item in payload:
+            data = dict(item)
+            if "cross_currency" not in data:
+                data["cross_currency"] = False
+            if "buy_currency" not in data:
+                data["buy_currency"] = None
+            if "sell_currency" not in data:
+                data["sell_currency"] = None
+            records.append(Transaction(**data))
+        return records
 
     def list_transactions_from_sqlite(self) -> List[Transaction]:
         return self.sqlite.load_transactions()
@@ -227,8 +248,8 @@ class LocalDataRepository:
         if self.list_funding_groups():
             return
         defaults = [
-            FundingGroup(name="Default JPY", currency=Currency.JPY, initial_amount=0.0),
-            FundingGroup(name="Default USD", currency=Currency.USD, initial_amount=0.0),
+            FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=0.0),
+            FundingGroup(name="USD", currency=Currency.USD, initial_amount=0.0),
         ]
         self._write_funding_groups(defaults)
 
@@ -288,12 +309,36 @@ class LocalDataRepository:
                     data["exchange_rate"] = None
                     changed = True
 
+            balance_exchange_rate = data.get("balance_exchange_rate")
+            if balance_exchange_rate in ("", None):
+                data["balance_exchange_rate"] = None
+            elif isinstance(balance_exchange_rate, str):
+                try:
+                    data["balance_exchange_rate"] = float(balance_exchange_rate)
+                except ValueError:
+                    data["balance_exchange_rate"] = None
+                    changed = True
+
             jpy_equivalent = data.get("jpy_equivalent")
             if isinstance(jpy_equivalent, str):
                 try:
                     data["jpy_equivalent"] = float(jpy_equivalent)
                 except ValueError:
                     data["jpy_equivalent"] = None
+                    changed = True
+
+            if data.get("currency") == Currency.USD and data.get("exchange_rate") is None:
+                if data.get("jpy_equivalent") is not None:
+                    data["amount"] = data["jpy_equivalent"]
+                data["currency"] = Currency.JPY
+                changed = True
+
+            balance_usd_required = data.get("balance_usd_required")
+            if isinstance(balance_usd_required, str):
+                try:
+                    data["balance_usd_required"] = float(balance_usd_required)
+                except ValueError:
+                    data["balance_usd_required"] = None
                     changed = True
 
             record = TaxSettlementRecord(**data)
@@ -377,4 +422,59 @@ class LocalDataRepository:
             lambda item: item.model_dump(mode="json"),
             self.sqlite.replace_capital_adjustments,
             lambda payload: FundingCapitalAdjustment(**payload),
+        )
+
+    # FX exchanges ----------------------------------------------------------------
+    def list_fx_exchanges(self) -> list[FxExchangeRecord]:
+        payload = json.loads(self._fx_exchanges_path.read_text(encoding="utf-8") or "[]")
+        records: list[FxExchangeRecord] = []
+        for item in payload:
+            data = dict(item)
+            if "to_amount" not in data:
+                data["to_amount"] = 0.0
+            records.append(FxExchangeRecord(**data))
+        return sorted(records, key=lambda item: (item.exchange_date, item.id))
+
+    def list_fx_exchanges_from_sqlite(self) -> list[FxExchangeRecord]:
+        return self.sqlite.load_fx_exchanges()
+
+    def add_fx_exchange(self, payload: FxExchangeCreate) -> FxExchangeRecord:
+        record = FxExchangeRecord(id=str(uuid4()), to_amount=0.0, **payload.model_dump())
+        records = self.list_fx_exchanges()
+        records.append(record)
+        self._write_fx_exchanges(records)
+        return record
+
+    def delete_fx_exchange(self, exchange_id: str) -> None:
+        records = self.list_fx_exchanges()
+        updated = [item for item in records if item.id != exchange_id]
+        if len(updated) == len(records):
+            raise ValueError(f"FX exchange {exchange_id} not found")
+        self._write_fx_exchanges(updated)
+
+    def _write_fx_exchanges(self, exchanges: Iterable[FxExchangeRecord]) -> None:
+        self._write_with_mirror(
+            self._fx_exchanges_path,
+            exchanges,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_fx_exchanges,
+            lambda payload: FxExchangeRecord(**payload),
+        )
+
+    # Quotes ----------------------------------------------------------------
+    def list_quotes(self) -> list[QuoteRecord]:
+        payload = json.loads(self._quotes_path.read_text(encoding="utf-8") or "[]")
+        records = [QuoteRecord(**item) for item in payload]
+        return records
+
+    def list_quotes_from_sqlite(self) -> list[QuoteRecord]:
+        return self.sqlite.load_quotes()
+
+    def replace_quotes(self, quotes: Iterable[QuoteRecord]) -> None:
+        self._write_with_mirror(
+            self._quotes_path,
+            quotes,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_quotes,
+            lambda payload: QuoteRecord(**payload),
         )

@@ -1,4 +1,6 @@
 import type {
+  FxExchangeCreate,
+  FxExchangeRecord,
   FundSnapshot,
   FundSnapshotsResponse,
   FundingCapitalAdjustment,
@@ -7,6 +9,7 @@ import type {
   FundingGroupUpdate,
   HealthResponse,
   Position,
+  QuoteSnapshot,
   RoundTripYieldRequest,
   RoundTripYieldResponse,
   TaxSettlementRecord,
@@ -104,6 +107,18 @@ export function getPositions(): Promise<Position[]> {
   return request<Position[]>("/positions");
 }
 
+// Quotes ------------------------------------------------------------------------
+export function getQuotes(): Promise<QuoteSnapshot> {
+  return request<QuoteSnapshot>("/quotes");
+}
+
+export function refreshQuotes(force = false): Promise<QuoteSnapshot> {
+  const suffix = force ? "?force=true" : "";
+  return request<QuoteSnapshot>(`/quotes/refresh${suffix}`, {
+    method: "POST"
+  });
+}
+
 // Funds --------------------------------------------------------------------------
 export function getFunds(): Promise<FundSnapshotsResponse> {
   return request<FundSnapshotsResponse>("/funds");
@@ -152,6 +167,24 @@ export function addFundingCapital(
 
 export function getCapitalAdjustments(): Promise<FundingCapitalAdjustment[]> {
   return request<FundingCapitalAdjustment[]>("/funding-groups/capital");
+}
+
+// FX exchanges -----------------------------------------------------------------
+export function getFxExchanges(): Promise<FxExchangeRecord[]> {
+  return request<FxExchangeRecord[]>("/fx-exchanges");
+}
+
+export function createFxExchange(payload: FxExchangeCreate): Promise<FxExchangeRecord> {
+  return request<FxExchangeRecord>("/fx-exchanges", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteFxExchange(id: string): Promise<void> {
+  return request<void>(`/fx-exchanges/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
 }
 
 // Tax settlements ----------------------------------------------------------------

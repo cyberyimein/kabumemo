@@ -118,35 +118,36 @@
               />
             </label>
             <label>
-              <span>{{ t("tax.fields.currency") }}</span>
+              <span>{{ t("tax.fields.payerGroup") }}</span>
               <BaseSelect
-                v-model="form.currency"
-                :options="currencyOptions"
-                :disabled="isEditing"
+                v-model="form.funding_group"
+                :options="payerGroupOptions"
+                :empty-label="t('common.states.none')"
               />
             </label>
-            <label v-if="form.currency === 'USD'">
+            <label>
+              <span>{{ t("tax.fields.currency") }}</span>
+              <input type="text" value="JPY" disabled />
+            </label>
+            <label v-if="requiresBalanceRate">
               <span>{{ t("tax.fields.rate") }}</span>
               <input
-                v-model.number="form.exchange_rate"
+                v-model.number="form.balance_exchange_rate"
                 type="number"
                 step="0.0001"
                 min="0"
                 required
               />
             </label>
-            <label v-if="form.currency === 'USD'" class="full">
-              <span>{{ t("tax.fields.converted") }}</span>
+            <label v-if="requiresBalanceRate" class="full">
+              <span>{{ t("tax.fields.balanceNeeded") }}</span>
               <input
-                v-model.number="form.converted_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                :placeholder="t('tax.convertedHint')"
+                :value="balanceUsdDisplay"
+                type="text"
+                disabled
               />
               <span class="conversion-hint" aria-live="polite">
-                {{ t("tax.autoConversion", { auto: autoConvertedUsdDisplay }) }} ·
-                {{ t("tax.submitAmount", { value: convertedUsdDisplay }) }}
+                {{ t("tax.balanceHint", { value: balanceUsdDisplay }) }}
               </span>
             </label>
             <label class="full">
@@ -185,13 +186,14 @@
                 <th>{{ t("tax.historyTable.symbol") }}</th>
                 <th class="numeric">{{ t("tax.historyTable.amount") }}</th>
                 <th class="numeric">{{ t("tax.historyTable.converted") }}</th>
+                <th class="numeric">{{ t("tax.historyTable.balance") }}</th>
                 <th>{{ t("tax.historyTable.fundingGroup") }}</th>
                 <th>{{ t("tax.historyTable.actions") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!settlementRows.length">
-                <td colspan="7" class="empty">{{ t("tax.historyEmpty") }}</td>
+                <td colspan="8" class="empty">{{ t("tax.historyEmpty") }}</td>
               </tr>
               <tr
                 v-for="row in pagedSettlementRows"
@@ -203,6 +205,9 @@
                 <td>{{ row.transaction?.symbol ?? row.record.transaction_id }}</td>
                 <td class="numeric">{{ formatCurrency(row.record.amount, row.record.currency) }}</td>
                 <td class="numeric">{{ formatCurrency(row.record.jpy_equivalent, "JPY") }}</td>
+                <td class="numeric">
+                  {{ row.record.balance_usd_required ? formatCurrency(row.record.balance_usd_required, "USD") : "—" }}
+                </td>
                 <td>{{ row.record.funding_group }}</td>
                 <td class="actions-cell">
                   <button
@@ -287,8 +292,7 @@ type TaxFormState = {
   funding_group: string;
   amount: number;
   currency: Currency;
-  exchange_rate: number | null;
-  converted_usd: number | null;
+  balance_exchange_rate: number | null;
 };
 
 const createDefaultFormState = (): TaxFormState => ({
@@ -296,8 +300,7 @@ const createDefaultFormState = (): TaxFormState => ({
   funding_group: "",
   amount: 0,
   currency: "JPY",
-  exchange_rate: null,
-  converted_usd: null,
+  balance_exchange_rate: null,
 });
 
 const form = reactive<TaxFormState>(createDefaultFormState());
@@ -324,6 +327,15 @@ const fundingGroupLookup = computed(() => {
   return map;
 });
 
+const payerGroupOptions = computed(() =>
+  props.fundingGroups
+    .filter((group) => group.currency === "JPY")
+    .map((group) => ({
+      label: group.name,
+      value: group.name,
+    }))
+);
+
 const selectedTransaction = computed(() =>
   form.transaction_id ? transactionLookup.value.get(form.transaction_id) ?? null : null
 );
@@ -334,11 +346,7 @@ const selectedSettlement = computed(() =>
     : null
 );
 
-const amountLabel = computed(() =>
-  form.currency === "USD"
-    ? t("tax.fields.amountJPY")
-    : t("tax.fields.amount")
-);
+const amountLabel = computed(() => t("tax.fields.amount"));
 
 const sortedPending = computed(() =>
   [...props.pendingTransactions].sort((a, b) =>
@@ -388,74 +396,26 @@ const pagedSettlementRows = computed(() =>
   )
 );
 
-const currencyOptions = computed(() => [
-  {
-    label: t("common.currencies.JPY"),
-    value: "JPY" as Currency,
-  },
-  {
-    label: t("common.currencies.USD"),
-    value: "USD" as Currency,
-  },
-]);
+const requiresBalanceRate = computed(
+  () => selectedTransaction.value?.cash_currency === "USD"
+);
 
-const autoConvertedUsdAmount = computed(() => {
-  if (form.currency !== "USD") {
-    return null;
-  }
-  const yen = Number(form.amount);
-  const rate = Number(form.exchange_rate);
-  if (!yen || !rate || rate <= 0) {
-    return null;
-  }
-  return Number((yen / rate).toFixed(2));
-});
-
-const manualUsdAmount = computed(() => {
-  if (form.currency !== "USD") {
-    return null;
-  }
-  const override = form.converted_usd;
-  if (override == null) {
-    return null;
-  }
-  const numeric = Number(override);
-  if (Number.isNaN(numeric) || numeric <= 0) {
-    return null;
-  }
-  return Number(numeric.toFixed(2));
-});
-
-// 两个转换来源（手动填写或根据汇率自动换算）择优使用，确保提交时有明确的美元金额。
-const effectiveUsdAmount = computed(() => {
-  if (form.currency !== "USD") {
-    return null;
-  }
-  return manualUsdAmount.value ?? autoConvertedUsdAmount.value;
-});
-
-const convertedUsdDisplay = computed(() => {
-  if (form.currency !== "USD" || effectiveUsdAmount.value === null) {
+const balanceUsdDisplay = computed(() => {
+  if (!requiresBalanceRate.value) {
     return "—";
   }
+  const rate = Number(form.balance_exchange_rate);
+  const amount = Number(form.amount);
+  if (!rate || rate <= 0 || !amount || amount <= 0) {
+    return "—";
+  }
+  const usd = amount / rate;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(effectiveUsdAmount.value);
-});
-
-const autoConvertedUsdDisplay = computed(() => {
-  if (form.currency !== "USD" || autoConvertedUsdAmount.value === null) {
-    return "—";
-  }
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(autoConvertedUsdAmount.value);
+  }).format(usd);
 });
 
 watch(
@@ -468,37 +428,14 @@ watch(
 );
 
 watch(
-  () => form.exchange_rate,
+  () => form.balance_exchange_rate,
   (value) => {
     if (value == null) {
       return;
     }
     const numeric = Number(value);
     if (Number.isNaN(numeric) || numeric <= 0) {
-      form.exchange_rate = null;
-    }
-  }
-);
-
-watch(
-  () => form.converted_usd,
-  (value) => {
-    if (value == null) {
-      return;
-    }
-    const numeric = Number(value);
-    if (Number.isNaN(numeric) || numeric < 0) {
-      form.converted_usd = 0;
-    }
-  }
-);
-
-watch(
-  () => form.currency,
-  (currency) => {
-    if (currency !== "USD") {
-      form.exchange_rate = null;
-      form.converted_usd = null;
+      form.balance_exchange_rate = null;
     }
   }
 );
@@ -507,16 +444,13 @@ watch(selectedTransaction, (tx) => {
   if (!tx) {
     return;
   }
-  form.funding_group = tx.funding_group;
+  form.funding_group = payerGroupOptions.value[0]?.value ?? "";
   if (isEditing.value) {
     return;
   }
   const group = fundingGroupLookup.value.get(tx.funding_group);
-  form.currency = group?.currency ?? "JPY";
-  if (form.currency !== "USD") {
-    form.exchange_rate = null;
-    form.converted_usd = null;
-  }
+  form.currency = "JPY";
+  form.balance_exchange_rate = null;
   form.amount = 0;
 });
 
@@ -531,10 +465,9 @@ function selectTransaction(id: string) {
   }
   const transaction = props.pendingTransactions.find((item) => item.id === id);
   form.transaction_id = id;
-  form.funding_group = transaction?.funding_group ?? "";
+  form.funding_group = payerGroupOptions.value[0]?.value ?? "";
   if (transaction) {
-    const group = fundingGroupLookup.value.get(transaction.funding_group);
-    form.currency = group?.currency ?? "JPY";
+    form.currency = "JPY";
   }
 }
 
@@ -546,15 +479,9 @@ function selectSettlement(id: string) {
   editingSettlementId.value = record.id;
   form.transaction_id = record.transaction_id;
   form.funding_group = record.funding_group;
-  form.currency = record.currency;
-  form.exchange_rate = record.exchange_rate ?? null;
-  if (record.currency === "USD") {
-    form.amount = record.jpy_equivalent;
-    form.converted_usd = record.amount;
-  } else {
-    form.amount = record.amount;
-    form.converted_usd = null;
-  }
+  form.currency = "JPY";
+  form.balance_exchange_rate = record.balance_exchange_rate ?? null;
+  form.amount = record.jpy_equivalent ?? record.amount;
 }
 
 function cancelEditing() {
@@ -598,13 +525,6 @@ function formatDate(value: string): string {
 }
 
 function normalizedAmount(): number | null {
-  if (form.currency === "USD") {
-    const usdAmount = effectiveUsdAmount.value;
-    if (usdAmount == null || usdAmount <= 0) {
-      return null;
-    }
-    return usdAmount;
-  }
   const value = Number(form.amount);
   if (Number.isNaN(value) || value <= 0) {
     return null;
@@ -616,15 +536,18 @@ async function handleSubmit() {
   if (!form.transaction_id) {
     return;
   }
+  if (!form.funding_group) {
+    return;
+  }
   const amount = normalizedAmount();
   if (amount === null) {
     return;
   }
-  if (form.currency === "USD" && (form.exchange_rate == null || form.exchange_rate <= 0)) {
+  if (requiresBalanceRate.value && (!form.balance_exchange_rate || form.balance_exchange_rate <= 0)) {
     return;
   }
   const groupCurrency = fundingGroupLookup.value.get(form.funding_group)?.currency;
-  if (groupCurrency && groupCurrency !== form.currency) {
+  if (groupCurrency && groupCurrency !== "JPY") {
     return;
   }
   pending.value = true;
@@ -633,10 +556,9 @@ async function handleSubmit() {
       const patch: TaxSettlementUpdate = {
         amount,
         funding_group: form.funding_group,
-        exchange_rate:
-          form.currency === "USD"
-            ? form.exchange_rate ?? undefined
-            : undefined,
+        balance_exchange_rate: requiresBalanceRate.value
+          ? form.balance_exchange_rate ?? undefined
+          : undefined,
       };
       emit("update", { id: editingSettlementId.value, data: patch });
     } else {
@@ -645,10 +567,9 @@ async function handleSubmit() {
         funding_group: form.funding_group,
         amount,
         currency: form.currency,
-        exchange_rate:
-          form.currency === "USD"
-            ? form.exchange_rate ?? undefined
-            : undefined,
+        balance_exchange_rate: requiresBalanceRate.value
+          ? form.balance_exchange_rate ?? undefined
+          : undefined,
       };
       emit("settle", payload);
     }
@@ -849,6 +770,16 @@ async function handleSubmit() {
 .ghost-btn:hover {
   color: var(--accent);
   border-color: rgba(15, 167, 201, 0.6);
+}
+
+@media (max-width: 768px) {
+  .tax-panel {
+    padding: 1.3rem;
+  }
+
+  .table-scroll table {
+    min-width: 560px;
+  }
 }
 
 

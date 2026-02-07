@@ -50,6 +50,42 @@ class FundingCapitalAdjustment(FundingCapitalAdjustmentBase):
     funding_group: str
 
 
+class FxExchangeBase(BaseModel):
+    exchange_date: date = Field(default_factory=date.today)
+    from_currency: Currency
+    to_currency: Currency
+    from_amount: float = Field(..., gt=0.0)
+    rate: float = Field(..., gt=0.0, description="JPY per USD")
+    notes: Optional[str] = None
+    transaction_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_pair(self) -> "FxExchangeBase":
+        if self.from_currency == self.to_currency:
+            raise ValueError("from_currency and to_currency must differ")
+        return self
+
+
+class FxExchangeCreate(FxExchangeBase):
+    pass
+
+
+class FxExchangeRecord(FxExchangeBase):
+    id: str
+    to_amount: float
+
+    @model_validator(mode="after")
+    def compute_to_amount(self) -> "FxExchangeRecord":
+        if self.from_currency == Currency.JPY and self.to_currency == Currency.USD:
+            converted = self.from_amount / self.rate
+        elif self.from_currency == Currency.USD and self.to_currency == Currency.JPY:
+            converted = self.from_amount * self.rate
+        else:
+            converted = self.from_amount
+        self.to_amount = round(converted, 6)
+        return self
+
+
 class TransactionBase(BaseModel):
     trade_date: date = Field(default_factory=date.today)
     symbol: str = Field(..., min_length=1)
@@ -57,6 +93,9 @@ class TransactionBase(BaseModel):
     gross_amount: float = Field(..., gt=0.0, description="Total cash outlay or proceeds")
     funding_group: str = Field(..., min_length=1)
     cash_currency: Currency
+    cross_currency: bool = False
+    buy_currency: Optional[Currency] = None
+    sell_currency: Optional[Currency] = None
     market: Market
     taxed: TaxStatus = TaxStatus.YES
     memo: Optional[str] = None
@@ -67,6 +106,27 @@ class TransactionBase(BaseModel):
         if value == 0:
             raise ValueError("quantity must not be zero")
         return value
+
+    @model_validator(mode="after")
+    def validate_cross_currency(self) -> "TransactionBase":
+        if self.market == Market.JP:
+            normalized = self.symbol.strip().upper()
+            if normalized and not normalized.endswith(".T"):
+                normalized = f"{normalized}.T"
+            self.symbol = normalized
+        if self.cross_currency:
+            if self.quantity >= 0:
+                raise ValueError("cross_currency is only valid for sell transactions")
+            if self.buy_currency is None or self.sell_currency is None:
+                raise ValueError("buy_currency and sell_currency are required")
+            if self.buy_currency == self.sell_currency:
+                raise ValueError("buy_currency and sell_currency must differ")
+            if self.cash_currency != self.sell_currency:
+                raise ValueError("cash_currency must match sell_currency")
+        else:
+            self.buy_currency = None
+            self.sell_currency = None
+        return self
 
 
 class TransactionCreate(TransactionBase):
@@ -92,6 +152,8 @@ class PositionBreakdown(BaseModel):
     quantity: float
     average_cost: float
     realized_pl: float
+    current_price: float | None = None
+    unrealized_pl: float | None = None
 
 
 class PositionGroupBreakdown(BaseModel):
@@ -100,6 +162,8 @@ class PositionGroupBreakdown(BaseModel):
     quantity: float
     average_cost: float
     realized_pl: float
+    current_price: float | None = None
+    unrealized_pl: float | None = None
 
 
 class Position(BaseModel):
@@ -107,6 +171,19 @@ class Position(BaseModel):
     market: Market
     breakdown: list[PositionBreakdown]
     group_breakdown: list[PositionGroupBreakdown] = Field(default_factory=list)
+
+
+class QuoteRecord(BaseModel):
+    symbol: str
+    market: Market
+    price: float
+    currency: Currency
+    as_of: date
+
+
+class QuoteSnapshot(BaseModel):
+    as_of: date
+    records: list[QuoteRecord]
 
 
 class FundSnapshot(BaseModel):
@@ -150,16 +227,19 @@ class TaxSettlementRequest(BaseModel):
     exchange_rate: Optional[float] = Field(
         default=None,
         gt=0.0,
-        description="JPY per USD when paying USD taxes",
+        description="Legacy USD tax exchange rate",
+    )
+    balance_exchange_rate: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="JPY per USD for balance hint",
     )
 
     @model_validator(mode="after")
     def validate_currency(self) -> "TaxSettlementRequest":
-        if self.currency == Currency.USD:
-            if self.exchange_rate is None:
-                raise ValueError("exchange_rate is required when currency is USD")
-        else:
-            self.exchange_rate = None
+        if self.currency != Currency.JPY:
+            raise ValueError("Tax payments must be in JPY")
+        self.exchange_rate = None
         return self
 
 
@@ -171,6 +251,8 @@ class TaxSettlementRecord(BaseModel):
     currency: Currency
     exchange_rate: Optional[float] = Field(default=None, gt=0.0)
     jpy_equivalent: Optional[float] = Field(default=None, ge=0.0)
+    balance_exchange_rate: Optional[float] = Field(default=None, gt=0.0)
+    balance_usd_required: Optional[float] = Field(default=None, ge=0.0)
     recorded_at: date
 
     @model_validator(mode="after")
@@ -183,6 +265,12 @@ class TaxSettlementRecord(BaseModel):
             jpy_equivalent = self.amount
             self.exchange_rate = None
         self.jpy_equivalent = round(jpy_equivalent, 2)
+        if self.balance_exchange_rate:
+            self.balance_usd_required = round(
+                self.jpy_equivalent / self.balance_exchange_rate, 4
+            )
+        else:
+            self.balance_usd_required = None
         return self
 
 
@@ -190,6 +278,7 @@ class TaxSettlementUpdate(BaseModel):
     amount: Optional[float] = Field(default=None, gt=0.0)
     funding_group: Optional[str] = Field(default=None, min_length=1)
     exchange_rate: Optional[float] = Field(default=None, gt=0.0)
+    balance_exchange_rate: Optional[float] = Field(default=None, gt=0.0)
 
 
 class RoundTripYieldRequest(BaseModel):

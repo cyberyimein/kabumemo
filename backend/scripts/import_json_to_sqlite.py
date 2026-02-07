@@ -46,13 +46,24 @@ def main() -> None:
     transactions = len(repository.list_transactions_from_sqlite())
     groups = len(repository.list_funding_groups_from_sqlite())
     settlements = len(repository.list_tax_settlements_from_sqlite())
+    exchanges = len(repository.list_fx_exchanges_from_sqlite())
+    quotes = len(repository.list_quotes_from_sqlite())
 
     print(
         "Imported data into SQLite database at",
         repository.sqlite.db_path,
     )
     print(
-        f"Transactions: {transactions}, Funding groups: {groups}, Tax settlements: {settlements}"
+        "Transactions:",
+        transactions,
+        "Funding groups:",
+        groups,
+        "Tax settlements:",
+        settlements,
+        "FX exchanges:",
+        exchanges,
+        "Quotes:",
+        quotes,
     )
 
 

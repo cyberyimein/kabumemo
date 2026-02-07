@@ -65,7 +65,9 @@
       <PositionsTab
         v-else-if="currentTab === 'positions'"
         :positions="state.positions"
+        :quotes="state.quotes"
         @refresh="handleRefreshPositions"
+        @refresh-quotes="handleRefreshQuotes"
       />
 
       <FundsTab
@@ -74,10 +76,14 @@
         :funds="state.fundSnapshots.funds"
         :aggregated="state.fundSnapshots.aggregated"
         :capital-adjustments="state.capitalAdjustments"
+        :fx-exchanges="state.fxExchanges"
+        :transactions="state.transactions"
         @create="handleCreateFundingGroup"
         @delete="handleDeleteFundingGroup"
         @refresh="handleRefreshFunds"
         @add-capital="handleAddCapital"
+        @add-fx="handleAddFxExchange"
+        @delete-fx="handleDeleteFxExchange"
       />
 
       <TaxTab
@@ -107,16 +113,21 @@ import TransactionsTab from "@/components/TransactionsTab.vue";
 import {
   ApiError,
   addFundingCapital,
+  createFxExchange,
   createFundingGroup,
   createTransaction,
+  deleteFxExchange,
   deleteFundingGroup,
   deleteTaxSettlement,
   deleteTransaction,
   getCapitalAdjustments,
+  getFxExchanges,
   getFunds,
   getFundingGroups,
   getHealth,
   getPositions,
+  getQuotes,
+  refreshQuotes,
   getTaxSettlements,
   getTransactions,
   settleTax,
@@ -129,10 +140,13 @@ import type {
   AggregatedFundSnapshot,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
+  FxExchangeCreate,
+  FxExchangeRecord,
   FundSnapshot,
   FundingGroup,
   HealthResponse,
   Position,
+  QuoteSnapshot,
   TaxSettlementRequest,
   TaxSettlementRecord,
   TaxSettlementUpdate,
@@ -177,6 +191,8 @@ const state = reactive({
   fundingGroups: [] as FundingGroup[],
   taxSettlements: [] as TaxSettlementRecord[],
   capitalAdjustments: [] as FundingCapitalAdjustment[],
+  fxExchanges: [] as FxExchangeRecord[],
+  quotes: { as_of: "", records: [] } as QuoteSnapshot,
 });
 
 const currentTab = ref<TabId>("transactions");
@@ -216,22 +232,74 @@ onMounted(async () => {
 async function refreshAllData(showToast = false) {
   try {
     loading.value = true;
-    const [groups, transactions, positions, fundsSnapshot, settlements, capitalAdjustments] = await Promise.all([
+    const results = await Promise.allSettled([
       getFundingGroups(),
       getTransactions(),
       getPositions(),
       getFunds(),
       getTaxSettlements(),
       getCapitalAdjustments(),
+      getFxExchanges(),
     ]);
-    state.fundingGroups = groups;
-    state.transactions = transactions;
-    state.positions = positions;
-    state.fundSnapshots.funds = fundsSnapshot.funds;
-    state.fundSnapshots.aggregated = fundsSnapshot.aggregated;
-    state.taxSettlements = settlements;
-    state.capitalAdjustments = capitalAdjustments;
-    if (showToast) {
+
+    const errors: string[] = [];
+
+    const [
+      groupsResult,
+      transactionsResult,
+      positionsResult,
+      fundsResult,
+      settlementsResult,
+      capitalResult,
+      fxResult,
+    ] = results;
+
+    if (groupsResult.status === "fulfilled") {
+      state.fundingGroups = groupsResult.value;
+    } else {
+      errors.push(asErrorMessage(groupsResult.reason));
+    }
+
+    if (transactionsResult.status === "fulfilled") {
+      state.transactions = transactionsResult.value;
+    } else {
+      errors.push(asErrorMessage(transactionsResult.reason));
+    }
+
+    if (positionsResult.status === "fulfilled") {
+      state.positions = positionsResult.value;
+    } else {
+      errors.push(asErrorMessage(positionsResult.reason));
+    }
+
+    if (fundsResult.status === "fulfilled") {
+      state.fundSnapshots.funds = fundsResult.value.funds;
+      state.fundSnapshots.aggregated = fundsResult.value.aggregated;
+    } else {
+      errors.push(asErrorMessage(fundsResult.reason));
+    }
+
+    if (settlementsResult.status === "fulfilled") {
+      state.taxSettlements = settlementsResult.value;
+    } else {
+      errors.push(asErrorMessage(settlementsResult.reason));
+    }
+
+    if (capitalResult.status === "fulfilled") {
+      state.capitalAdjustments = capitalResult.value;
+    } else {
+      errors.push(asErrorMessage(capitalResult.reason));
+    }
+
+    if (fxResult.status === "fulfilled") {
+      state.fxExchanges = fxResult.value;
+    } else {
+      errors.push(asErrorMessage(fxResult.reason));
+    }
+
+    if (errors.length) {
+      showNotification("error", errors[0]);
+    } else if (showToast) {
       showNotification("success", t("app.toasts.dataRefreshed"));
     }
   } catch (error: unknown) {
@@ -321,8 +389,23 @@ async function handleRefreshPositions() {
   showNotification("success", t("positions.toasts.refreshed"));
 }
 
+async function handleRefreshQuotes() {
+  try {
+    await refreshQuotes();
+    await Promise.all([reloadQuotes(), reloadPositions()]);
+    showNotification("success", t("positions.toasts.quotesRefreshed"));
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
 async function handleRefreshFunds() {
-  await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
+  await Promise.all([
+    reloadFundingGroups(),
+    reloadFunds(),
+    reloadCapitalAdjustments(),
+    reloadFxExchanges(),
+  ]);
   showNotification("success", t("funds.toasts.refreshed"));
 }
 
@@ -351,9 +434,34 @@ async function handleAddCapital(event: CapitalAdditionEvent) {
     await addFundingCapital(event.data);
     event.onDone(true);
     showNotification("success", t("funds.toasts.capitalAdded"));
-    await Promise.all([reloadFundingGroups(), reloadFunds(), reloadCapitalAdjustments()]);
+    await Promise.all([
+      reloadFundingGroups(),
+      reloadFunds(),
+      reloadCapitalAdjustments(),
+      reloadFxExchanges(),
+    ]);
   } catch (error: unknown) {
     event.onDone(false);
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleAddFxExchange(payload: FxExchangeCreate) {
+  try {
+    await createFxExchange(payload);
+    showNotification("success", t("funds.fx.toasts.created"));
+    await reloadFxExchanges();
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleDeleteFxExchange(id: string) {
+  try {
+    await deleteFxExchange(id);
+    showNotification("success", t("funds.fx.toasts.deleted"));
+    await reloadFxExchanges();
+  } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
 }
@@ -399,6 +507,10 @@ async function reloadPositions() {
   state.positions = await getPositions();
 }
 
+async function reloadQuotes() {
+  state.quotes = await getQuotes();
+}
+
 async function reloadFunds() {
   const snapshot = await getFunds();
   state.fundSnapshots.funds = snapshot.funds;
@@ -415,6 +527,10 @@ async function reloadTaxSettlements() {
 
 async function reloadCapitalAdjustments() {
   state.capitalAdjustments = await getCapitalAdjustments();
+}
+
+async function reloadFxExchanges() {
+  state.fxExchanges = await getFxExchanges();
 }
 </script>
 

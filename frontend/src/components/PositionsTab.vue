@@ -5,10 +5,19 @@
         <h2>{{ t("positions.title") }}</h2>
         <p>{{ t("positions.description") }}</p>
       </div>
-      <button type="button" class="refresh-button" @click="$emit('refresh')">
-        {{ t("common.actions.refresh") }}
-      </button>
+      <div class="header-actions">
+        <button type="button" class="ghost-button" @click="$emit('refresh-quotes')">
+          {{ t("positions.actions.refreshQuotes") }}
+        </button>
+        <button type="button" class="refresh-button" @click="$emit('refresh')">
+          {{ t("common.actions.refresh") }}
+        </button>
+      </div>
     </header>
+
+    <p v-if="quotes.as_of" class="quotes-meta">
+      {{ t("positions.quotesAsOf", { date: quotes.as_of }) }}
+    </p>
 
     <div class="surface-group">
       <section class="surface">
@@ -22,11 +31,13 @@
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.cost") }}</th>
                 <th class="numeric">{{ t("positions.table.pl") }}</th>
+                <th class="numeric">{{ t("positions.table.price") }}</th>
+                <th class="numeric">{{ t("positions.table.unrealized") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!activePositions.length">
-                <td colspan="5" class="empty">{{ t("positions.emptyActive") }}</td>
+                <td colspan="7" class="empty">{{ t("positions.emptyActive") }}</td>
               </tr>
               <template v-for="item in pagedActivePositions" :key="rowKey(item)">
                 <tr
@@ -48,6 +59,10 @@
                   <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
                   <td :class="['numeric', profitClass(item.breakdown)]">
                     {{ formatProfitBreakdown(item.breakdown) }}
+                  </td>
+                  <td class="numeric">{{ formatPriceBreakdown(item.breakdown) }}</td>
+                  <td :class="['numeric', profitClass(item.breakdown)]">
+                    {{ formatUnrealizedBreakdown(item.breakdown) }}
                   </td>
                 </tr>
                 <tr
@@ -109,11 +124,13 @@
                 <th>{{ t("positions.table.market") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.pl") }}</th>
+                <th class="numeric">{{ t("positions.table.price") }}</th>
+                <th class="numeric">{{ t("positions.table.unrealized") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!closedPositions.length">
-                <td colspan="4" class="empty">{{ t("positions.emptyClosed") }}</td>
+                <td colspan="6" class="empty">{{ t("positions.emptyClosed") }}</td>
               </tr>
               <template v-for="item in pagedClosedPositions" :key="rowKey(item)">
                 <tr
@@ -134,6 +151,10 @@
                   <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
                   <td :class="['numeric', profitClass(item.breakdown)]">
                     {{ formatProfitBreakdown(item.breakdown) }}
+                  </td>
+                  <td class="numeric">{{ formatPriceBreakdown(item.breakdown) }}</td>
+                  <td :class="['numeric', profitClass(item.breakdown)]">
+                    {{ formatUnrealizedBreakdown(item.breakdown) }}
                   </td>
                 </tr>
                 <tr
@@ -432,6 +453,36 @@ function marketLabel(value: string): string {
   border-bottom: 1px solid rgba(199, 210, 220, 0.6);
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.ghost-button {
+  border-radius: 999px;
+  border: 1px solid var(--divider);
+  background: linear-gradient(180deg, var(--panel), var(--panel-alt));
+  color: var(--text-dim);
+  padding: 0.55rem 1.25rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), transform var(--transition);
+}
+
+.ghost-button:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+.quotes-meta {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
 .panel-header h2 {
   font-size: 1.3rem;
   letter-spacing: 0.5px;
@@ -591,6 +642,16 @@ function marketLabel(value: string): string {
 .mixed {
   color: var(--accent-orange, #d97706);
   font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .positions-panel {
+    padding: 1.3rem;
+  }
+
+  .table-scroll table {
+    min-width: 520px;
+  }
 }
 
 </style>
