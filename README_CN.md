@@ -12,7 +12,7 @@ Kabumemo 是一个可以离线使用的股票交易簿，采用 **Vue 3 + Vite �
 
 - **前端界面**：支持多标签页的仪表盘（交易、持仓、资金、纳税），可直接在浏览器完成录入与查询操作。
 - **后端 API**：负责存储与业务规则校验，包含交易、资金组、纳税等核心功能，并暴露统一的 REST 接口。
-- **数据存储**：所有写入会同时更新 `data/` 下的 JSON 文件与轻量级 SQLite 数据库 `kabumemo.db`，既保留可手动编辑的备份，也提供结构化查询能力。
+- **数据存储**：JSON 文件是主数据源，所有写入会同时更新 `data/` 下的 JSON 与轻量级 SQLite 数据库 `kabumemo.db`，既保留可手动编辑的备份，也提供结构化查询能力。
 
 仓库中已经集成「一键启动」批处理脚本与端到端删除交易功能，以下为完整的使用说明与能力概览。
 
@@ -129,8 +129,9 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 | PUT    | `/api/transactions/{transaction_id}`   | 更新指定交易，持续校验资金组与持仓余额       |
 | DELETE | `/api/transactions/{transaction_id}`   | 删除指定交易，同时清理关联纳税记录           |
 | GET    | `/api/positions`                       | 根据交易计算仓位（含多币种拆分）与已实现盈亏 |
+| GET    | `/api/positions/history`               | 查询持仓 1 年日线与买卖点（后端取行情）      |
 | GET    | `/api/funds`                           | 输出资金快照与通货汇总（含年度收益指标）     |
-| GET    | `/api/funding-groups`                  | 列出资金组，首次启动自动创建 Default JPY/USD |
+| GET    | `/api/funding-groups`                  | 列出资金组，首次启动自动创建 JPY/USD         |
 | POST   | `/api/funding-groups`                  | 新增/覆盖资金组                              |
 | PATCH  | `/api/funding-groups/{name}`           | 更新资金组的货币、初始资金或备注             |
 | DELETE | `/api/funding-groups/{name}`           | 删除资金组（需至少保留一个）                 |
@@ -152,7 +153,7 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
   - 新建或编辑买入/卖出交易，数量自动规范化，税务状态给出默认值，编辑时会显示可取消/保存的提示。
   - 行点击可回填表单；操作列提供编辑与删除按钮，均带二次确认以避免误操作。
   - 支持刷新按钮同步后端最新数据。
-- **持仓表 (Positions)**：基于交易列表实时计算持仓数量、平均成本和已实现盈亏，并按币种拆分展示明细。
+- **持仓表 (Positions)**：基于交易列表实时计算持仓数量、平均成本和已实现盈亏，并按币种拆分展示明细；支持单选查看 1 年日线与买卖点（ECharts）。
 - **资金表 (Funds & Groups)**
   - 管理资金组（新增、修改、删除）并展示包含年度对比指标的资金快照。
   - 新增「通货汇总」视图，可快速对比不同货币下的总体资金、持仓成本与盈亏表现，内置 USD→JPY 汇率输入框，可即时把合并后的总览折算为日元。
@@ -169,10 +170,10 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 ## 数据说明
 
 - `transactions.json`：交易流水，后端在接收到首个请求时自动创建。
-- `funding_groups.json`：资金组配置，初次运行会生成「Default JPY / Default USD」。
+- `funding_groups.json`：资金组配置，初次运行会生成「JPY / USD」。
 - `tax_settlements.json`：纳税记录，由纳税 API 自动维护。
 - `capital_adjustments.json`：记录每个资金组的追加资金及生效日期。
-- `kabumemo.db`：SQLite 镜像，与 JSON 文件保持完全同步，可用于结构化查询或第三方分析工具。
+- `kabumemo.db`：SQLite 镜像，与 JSON 文件保持完全同步，可用于结构化查询或第三方分析工具。删除该文件可触发 JSON -> SQLite 重新生成。
 - `data/backups/`：预留备份目录，后续会提供导入导出脚本。
 
 ### 维护脚本

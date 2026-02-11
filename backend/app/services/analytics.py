@@ -251,7 +251,7 @@ def compute_fund_snapshots(
             if not group:
                 raise ValueError(f"Funding group not found for transaction {tx.id}")
             group_currency = group.currency
-            if tx.cross_currency:
+            if tx.cross_currency and tx.cash_currency != group_currency:
                 fx_record = fx_map.get(tx.id)
                 if not fx_record:
                     raise ValueError(

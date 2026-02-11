@@ -37,14 +37,18 @@
       "create": "作成",
       "edit": "編集",
       "cancel": "キャンセル",
+      "close": "閉じる",
       "today": "今日"
     },
     "states": {
-      "none": "データがありません"
+      "none": "データがありません",
+      "error": "エラーが発生しました"
     },
     "toggle": {
       "buy": "買い",
       "sell": "売り",
+      "on": "オン",
+      "off": "オフ",
       "market": {
         "jp": "日本株",
         "us": "米国株"
@@ -85,6 +89,8 @@
       "crossCurrency": "クロス通貨の売却",
       "buyCurrency": "買付通貨",
       "sellCurrency": "売却通貨",
+      "fxFromAmount": "売却金額",
+      "fxToAmount": "買付金額",
       "taxed": "納税区分",
       "memo": "メモ"
     },
@@ -139,7 +145,8 @@
         "fundingGroup": "同じ資金グループの取引を選択してください。",
         "market": "同じ市場の取引を選択してください。",
         "currency": "同じ資金通貨の取引を選択してください。",
-        "netQuantityMismatch": "選択した数量の合計を 0 にしてください（現在 {quantity}）。"
+        "netQuantityMismatch": "選択した数量の合計を 0 にしてください（現在 {quantity}）。",
+        "fxAmountRequired": "クロス通貨の売却には売却/買付金額が必要です。"
       },
       "table": {
         "select": "選択",
@@ -168,7 +175,8 @@
     "title": "ポジション",
     "description": "取引から残高、平均取得単価、実現損益を計算します。",
     "actions": {
-      "refreshQuotes": "株価更新"
+      "refreshQuotes": "株価更新",
+      "viewHistory": "価格推移"
     },
     "quotesAsOf": "株価更新日：{date}",
     "activeTitle": "保有中 ({count})",
@@ -190,6 +198,11 @@
     "toasts": {
       "refreshed": "ポジションデータを更新しました",
       "quotesRefreshed": "株価を更新しました"
+    },
+    "history": {
+      "title": "価格推移 · {symbol}",
+      "loading": "価格推移を読み込み中...",
+      "empty": "価格推移データがありません。"
     }
   },
   "funds": {

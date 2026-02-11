@@ -6,6 +6,14 @@
         <p>{{ t("positions.description") }}</p>
       </div>
       <div class="header-actions">
+        <button
+          type="button"
+          class="primary-btn"
+          :disabled="!selectedPosition"
+          @click="openHistory"
+        >
+          {{ t("positions.actions.viewHistory") }}
+        </button>
         <button type="button" class="ghost-button" @click="$emit('refresh-quotes')">
           {{ t("positions.actions.refreshQuotes") }}
         </button>
@@ -15,7 +23,7 @@
       </div>
     </header>
 
-    <p v-if="quotes.as_of" class="quotes-meta">
+    <p v-if="quotes?.as_of" class="quotes-meta">
       {{ t("positions.quotesAsOf", { date: quotes.as_of }) }}
     </p>
 
@@ -26,6 +34,7 @@
           <table>
             <thead>
               <tr>
+                <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th>{{ t("positions.table.market") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
@@ -37,13 +46,21 @@
             </thead>
             <tbody>
               <tr v-if="!activePositions.length">
-                <td colspan="7" class="empty">{{ t("positions.emptyActive") }}</td>
+                <td colspan="8" class="empty">{{ t("positions.emptyActive") }}</td>
               </tr>
               <template v-for="item in pagedActivePositions" :key="rowKey(item)">
                 <tr
                   :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
                   @click="handleRowClick(item)"
                 >
+                  <td class="select-column" @click.stop>
+                    <input
+                      type="radio"
+                      name="position-select"
+                      :checked="isSelected(item)"
+                      @change="selectPosition(item)"
+                    />
+                  </td>
                   <td>
                     <div class="symbol-cell">
                       <span
@@ -70,7 +87,7 @@
                   :key="`${rowKey(item)}-details`"
                   class="group-row"
                 >
-                  <td colspan="5">
+                  <td colspan="8">
                     <div class="group-table-wrapper">
                       <table>
                         <thead>
@@ -120,6 +137,7 @@
           <table>
             <thead>
               <tr>
+                <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th>{{ t("positions.table.market") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
@@ -130,13 +148,21 @@
             </thead>
             <tbody>
               <tr v-if="!closedPositions.length">
-                <td colspan="6" class="empty">{{ t("positions.emptyClosed") }}</td>
+                <td colspan="7" class="empty">{{ t("positions.emptyClosed") }}</td>
               </tr>
               <template v-for="item in pagedClosedPositions" :key="rowKey(item)">
                 <tr
                   :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
                   @click="handleRowClick(item)"
                 >
+                  <td class="select-column" @click.stop>
+                    <input
+                      type="radio"
+                      name="position-select"
+                      :checked="isSelected(item)"
+                      @change="selectPosition(item)"
+                    />
+                  </td>
                   <td>
                     <div class="symbol-cell">
                       <span
@@ -162,7 +188,7 @@
                   :key="`${rowKey(item)}-details`"
                   class="group-row"
                 >
-                  <td colspan="4">
+                  <td colspan="7">
                     <div class="group-table-wrapper">
                       <table>
                         <thead>
@@ -207,20 +233,52 @@
       </section>
     </div>
   </section>
+
+  <div v-if="historyOpen" class="modal-backdrop" @click.self="closeHistory">
+    <div class="modal-panel" role="dialog" aria-modal="true">
+      <header class="modal-header">
+        <h3>{{ t("positions.history.title", { symbol: historyTitle }) }}</h3>
+        <button type="button" class="ghost-button" @click="closeHistory">
+          {{ t("common.actions.close") }}
+        </button>
+      </header>
+      <section class="modal-body">
+        <p v-if="historyLoading" class="modal-status">
+          {{ t("positions.history.loading") }}
+        </p>
+        <p v-else-if="historyError" class="modal-status error">
+          {{ historyError }}
+        </p>
+        <p v-else-if="!historyData || !historyData.series.length" class="modal-status">
+          {{ t("positions.history.empty") }}
+        </p>
+        <div v-else ref="historyChartEl" class="history-chart"></div>
+      </section>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import * as echarts from "echarts";
 
 import PaginationControls from "./ui/PaginationControls.vue";
 import { usePagination } from "@/composables/usePagination";
-import type { Position, PositionBreakdown, PositionGroupBreakdown } from "@/types/api";
+import { ApiError, getPositionHistory } from "@/services/api";
+import type {
+  Position,
+  PositionBreakdown,
+  PositionGroupBreakdown,
+  PositionHistoryResponse,
+  QuoteSnapshot,
+} from "@/types/api";
 
-const props = defineProps<{ positions: Position[] }>();
+const props = defineProps<{ positions: Position[]; quotes?: QuoteSnapshot | null }>();
 
 defineEmits<{
   (e: "refresh"): void;
+  (e: "refresh-quotes"): void;
 }>();
 
 const { t } = useI18n();
@@ -259,10 +317,35 @@ const pagedClosedPositions = computed(() =>
   closedPositions.value.slice(closedOffset.value, closedOffset.value + closedPageSize)
 );
 
+const selectedKey = ref<string | null>(null);
+const selectedPosition = ref<Position | null>(null);
+const historyOpen = ref(false);
+const historyLoading = ref(false);
+const historyError = ref<string | null>(null);
+const historyData = ref<PositionHistoryResponse | null>(null);
+const historyChartEl = ref<HTMLDivElement | null>(null);
+let historyChart: echarts.ECharts | null = null;
+
+const historyTitle = computed(() => {
+  if (!selectedPosition.value) {
+    return "";
+  }
+  return `${selectedPosition.value.symbol} (${selectedPosition.value.market})`;
+});
+
 const expandedRows = ref<Set<string>>(new Set());
 
 function rowKey(position: Position): string {
   return `${position.symbol}-${position.market}`;
+}
+
+function selectPosition(position: Position): void {
+  selectedKey.value = rowKey(position);
+  selectedPosition.value = position;
+}
+
+function isSelected(position: Position): boolean {
+  return selectedKey.value === rowKey(position);
 }
 
 function hasGroupBreakdown(position: Position): boolean {
@@ -297,15 +380,154 @@ function groupKey(position: Position, entry: PositionGroupBreakdown): string {
 watch(
   () => props.positions,
   (positions) => {
+    const validKeys = new Set(positions.map(rowKey));
+    if (selectedKey.value && !validKeys.has(selectedKey.value)) {
+      selectedKey.value = null;
+      selectedPosition.value = null;
+    }
     if (!expandedRows.value.size) {
       return;
     }
-    const validKeys = new Set(positions.map(rowKey));
     expandedRows.value = new Set(
       [...expandedRows.value].filter((key) => validKeys.has(key))
     );
   }
 );
+
+function asErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return t("common.states.error");
+}
+
+async function openHistory(): Promise<void> {
+  if (!selectedPosition.value) {
+    return;
+  }
+  historyOpen.value = true;
+  await loadHistory();
+}
+
+function closeHistory(): void {
+  historyOpen.value = false;
+  historyError.value = null;
+  historyLoading.value = false;
+  historyData.value = null;
+  if (historyChart) {
+    historyChart.dispose();
+    historyChart = null;
+  }
+  window.removeEventListener("resize", handleChartResize);
+}
+
+async function loadHistory(): Promise<void> {
+  if (!selectedPosition.value) {
+    return;
+  }
+  historyLoading.value = true;
+  historyError.value = null;
+  historyData.value = null;
+  try {
+    const result = await getPositionHistory(
+      selectedPosition.value.symbol,
+      selectedPosition.value.market,
+      "1y"
+    );
+    historyData.value = result;
+    await nextTick();
+    renderHistoryChart();
+  } catch (error: unknown) {
+    historyError.value = asErrorMessage(error);
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function renderHistoryChart(): void {
+  if (!historyChartEl.value || !historyData.value) {
+    return;
+  }
+  if (!historyChart) {
+    historyChart = echarts.init(historyChartEl.value);
+    window.addEventListener("resize", handleChartResize);
+  }
+
+  const dates = historyData.value.series.map((point) => point.date);
+  const closes = historyData.value.series.map((point) => point.close);
+  const markers = historyData.value.markers.filter(
+    (marker) => marker.currency === historyData.value?.currency
+  );
+  const buyPoints = markers
+    .filter((marker) => marker.side === "buy")
+    .map((marker) => [marker.date, marker.price]);
+  const sellPoints = markers
+    .filter((marker) => marker.side === "sell")
+    .map((marker) => [marker.date, marker.price]);
+
+  historyChart.setOption({
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "line" },
+    },
+    grid: { left: 50, right: 24, top: 24, bottom: 40 },
+    xAxis: {
+      type: "category",
+      data: dates,
+      boundaryGap: false,
+      axisLabel: { color: "#6b7280" },
+      axisLine: { lineStyle: { color: "rgba(148, 163, 184, 0.6)" } },
+    },
+    yAxis: {
+      type: "value",
+      scale: true,
+      axisLabel: { color: "#6b7280" },
+      splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.2)" } },
+    },
+    series: [
+      {
+        name: "Close",
+        type: "line",
+        data: closes,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2, color: "#0ea5e9" },
+      },
+      {
+        name: "Buy",
+        type: "scatter",
+        data: buyPoints,
+        symbol: "triangle",
+        symbolSize: 10,
+        itemStyle: { color: "#22c55e" },
+      },
+      {
+        name: "Sell",
+        type: "scatter",
+        data: sellPoints,
+        symbol: "triangle",
+        symbolRotate: 180,
+        symbolSize: 10,
+        itemStyle: { color: "#ef4444" },
+      },
+    ],
+  });
+}
+
+function handleChartResize(): void {
+  historyChart?.resize();
+}
+
+onBeforeUnmount(() => {
+  if (historyChart) {
+    historyChart.dispose();
+    historyChart = null;
+  }
+  window.removeEventListener("resize", handleChartResize);
+});
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
@@ -377,6 +599,34 @@ function formatProfitBreakdown(breakdown: PositionBreakdown[]): string {
     .join(" / ");
 }
 
+function formatPriceBreakdown(breakdown: PositionBreakdown[]): string {
+  if (!breakdown.length) {
+    return "-";
+  }
+
+  return breakdown
+    .map((entry) =>
+      entry.current_price == null
+        ? "-"
+        : formatCurrencyValue(entry.current_price, entry.currency)
+    )
+    .join(" / ");
+}
+
+function formatUnrealizedBreakdown(breakdown: PositionBreakdown[]): string {
+  if (!breakdown.length) {
+    return "-";
+  }
+
+  return breakdown
+    .map((entry) =>
+      entry.unrealized_pl == null
+        ? "-"
+        : formatCurrencyValue(entry.unrealized_pl, entry.currency)
+    )
+    .join(" / ");
+}
+
 function profitClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
   const positive = breakdown.some((entry) => entry.realized_pl > 1e-2);
   const negative = breakdown.some((entry) => entry.realized_pl < -1e-2);
@@ -433,15 +683,9 @@ function marketLabel(value: string): string {
 }
 
 .surface-group {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: clamp(1.5rem, 3vw, 2.4rem);
-}
-
-@media (min-width: 960px) {
-  .surface-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-  }
 }
 
 .panel-header {
@@ -540,6 +784,18 @@ function marketLabel(value: string): string {
   border-bottom: 1px solid var(--divider);
   font-size: 0.95rem;
   color: var(--text);
+}
+
+.select-column {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.select-column input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
 }
 
 .numeric {
@@ -642,6 +898,60 @@ function marketLabel(value: string): string {
 .mixed {
   color: var(--accent-orange, #d97706);
   font-weight: 600;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 50;
+}
+
+.modal-panel {
+  width: min(900px, 100%);
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-soft);
+  padding: 1.5rem;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modal-status {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.modal-status.error {
+  color: var(--accent-red);
+}
+
+.history-chart {
+  width: 100%;
+  height: 360px;
 }
 
 @media (max-width: 768px) {

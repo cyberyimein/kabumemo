@@ -13,9 +13,11 @@ from ..models.schemas import (
     FundingGroupUpdate,
     FxExchangeCreate,
     FxExchangeRecord,
+    Market,
     QuoteSnapshot,
     HealthResponse,
     Position,
+    PositionHistoryResponse,
     RoundTripYieldRequest,
     RoundTripYieldResponse,
     TaxSettlementRecord,
@@ -34,6 +36,7 @@ from ..services.analytics import (
     record_tax_settlement,
     update_tax_settlement,
 )
+from ..services.history import get_position_history
 from ..storage.repository import LocalDataRepository
 from ..services.quotes import refresh_quotes_if_needed
 
@@ -174,6 +177,26 @@ def get_positions() -> list[Position]:
         return compute_positions(transactions, fx_exchanges, quotes)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/positions/history", response_model=PositionHistoryResponse)
+def get_positions_history(
+    symbol: str,
+    market: Market,
+    period: str = "1y",
+) -> PositionHistoryResponse:
+    normalized_period = period.strip().lower() if period else "1y"
+    if normalized_period not in {"1y", "1yr", "1year"}:
+        normalized_period = "1y"
+    transactions = repository.list_transactions()
+    fx_exchanges = repository.list_fx_exchanges()
+    return get_position_history(
+        transactions=transactions,
+        fx_exchanges=fx_exchanges,
+        symbol=symbol,
+        market=market,
+        period=normalized_period,
+    )
 
 
 @router.get("/funds", response_model=FundSnapshots)

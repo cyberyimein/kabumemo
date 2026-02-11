@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "echarts": "^5.5.0",
     "vue": "^3.5.3",
     "vue-i18n": "^9.14.5"
   },

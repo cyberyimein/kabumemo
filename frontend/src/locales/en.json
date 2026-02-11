@@ -37,14 +37,18 @@
       "create": "Create",
       "edit": "Edit",
       "cancel": "Cancel",
+      "close": "Close",
       "today": "Today"
     },
     "states": {
-      "none": "No data yet"
+      "none": "No data yet",
+      "error": "Something went wrong"
     },
     "toggle": {
       "buy": "Buy",
       "sell": "Sell",
+      "on": "On",
+      "off": "Off",
       "market": {
         "jp": "Japan",
         "us": "US"
@@ -85,6 +89,8 @@
       "crossCurrency": "Cross-currency sell",
       "buyCurrency": "Buy currency",
       "sellCurrency": "Sell currency",
+      "fxFromAmount": "Sell amount",
+      "fxToAmount": "Buy amount",
       "taxed": "Taxed",
       "memo": "Memo"
     },
@@ -139,7 +145,8 @@
         "fundingGroup": "Select trades from the same funding group.",
         "market": "Select trades from the same market.",
         "currency": "Select trades using the same cash currency.",
-        "netQuantityMismatch": "Trades must net to zero quantity (current net: {quantity})."
+        "netQuantityMismatch": "Trades must net to zero quantity (current net: {quantity}).",
+        "fxAmountRequired": "Both sell and buy FX amounts are required."
       },
       "table": {
         "select": "Select",
@@ -168,7 +175,8 @@
     "title": "Positions",
     "description": "Calculate remaining holdings, average cost, and realized P&L from trades.",
     "actions": {
-      "refreshQuotes": "Refresh quotes"
+      "refreshQuotes": "Refresh quotes",
+      "viewHistory": "View history"
     },
     "quotesAsOf": "Quotes as of {date}",
     "activeTitle": "Active positions ({count})",
@@ -190,6 +198,11 @@
     "toasts": {
       "refreshed": "Positions updated",
       "quotesRefreshed": "Quotes updated"
+    },
+    "history": {
+      "title": "Price history · {symbol}",
+      "loading": "Loading price history...",
+      "empty": "No price history available."
     }
   },
   "funds": {

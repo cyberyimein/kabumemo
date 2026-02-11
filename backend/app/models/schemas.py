@@ -22,6 +22,11 @@ class TaxStatus(str, Enum):
     NO = "N"
 
 
+class TradeSide(str, Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
 class FundingGroup(BaseModel):
     name: str = Field(..., min_length=1)
     currency: Currency
@@ -55,7 +60,8 @@ class FxExchangeBase(BaseModel):
     from_currency: Currency
     to_currency: Currency
     from_amount: float = Field(..., gt=0.0)
-    rate: float = Field(..., gt=0.0, description="JPY per USD")
+    to_amount: Optional[float] = Field(default=None, gt=0.0)
+    rate: Optional[float] = Field(default=None, gt=0.0, description="JPY per USD")
     notes: Optional[str] = None
     transaction_id: Optional[str] = None
 
@@ -63,6 +69,22 @@ class FxExchangeBase(BaseModel):
     def validate_pair(self) -> "FxExchangeBase":
         if self.from_currency == self.to_currency:
             raise ValueError("from_currency and to_currency must differ")
+        if self.to_amount is None and self.rate is None:
+            raise ValueError("to_amount or rate is required")
+        if self.to_amount is None:
+            if self.from_currency == Currency.JPY and self.to_currency == Currency.USD:
+                self.to_amount = self.from_amount / self.rate
+            elif self.from_currency == Currency.USD and self.to_currency == Currency.JPY:
+                self.to_amount = self.from_amount * self.rate
+            else:
+                self.to_amount = self.from_amount
+        if self.rate is None:
+            if self.from_currency == Currency.JPY and self.to_currency == Currency.USD:
+                self.rate = self.from_amount / self.to_amount
+            elif self.from_currency == Currency.USD and self.to_currency == Currency.JPY:
+                self.rate = self.to_amount / self.from_amount
+            else:
+                self.rate = self.from_amount / self.to_amount
         return self
 
 
@@ -73,17 +95,6 @@ class FxExchangeCreate(FxExchangeBase):
 class FxExchangeRecord(FxExchangeBase):
     id: str
     to_amount: float
-
-    @model_validator(mode="after")
-    def compute_to_amount(self) -> "FxExchangeRecord":
-        if self.from_currency == Currency.JPY and self.to_currency == Currency.USD:
-            converted = self.from_amount / self.rate
-        elif self.from_currency == Currency.USD and self.to_currency == Currency.JPY:
-            converted = self.from_amount * self.rate
-        else:
-            converted = self.from_amount
-        self.to_amount = round(converted, 6)
-        return self
 
 
 class TransactionBase(BaseModel):
@@ -121,8 +132,8 @@ class TransactionBase(BaseModel):
                 raise ValueError("buy_currency and sell_currency are required")
             if self.buy_currency == self.sell_currency:
                 raise ValueError("buy_currency and sell_currency must differ")
-            if self.cash_currency != self.sell_currency:
-                raise ValueError("cash_currency must match sell_currency")
+            if self.cash_currency != self.buy_currency:
+                raise ValueError("cash_currency must match buy_currency")
         else:
             self.buy_currency = None
             self.sell_currency = None
@@ -184,6 +195,28 @@ class QuoteRecord(BaseModel):
 class QuoteSnapshot(BaseModel):
     as_of: date
     records: list[QuoteRecord]
+
+
+class PriceHistoryPoint(BaseModel):
+    date: date
+    close: float
+
+
+class TradeMarker(BaseModel):
+    date: date
+    price: float
+    side: TradeSide
+    quantity: float
+    currency: Currency
+    transaction_id: str
+
+
+class PositionHistoryResponse(BaseModel):
+    symbol: str
+    market: Market
+    currency: Currency
+    series: list[PriceHistoryPoint]
+    markers: list[TradeMarker]
 
 
 class FundSnapshot(BaseModel):

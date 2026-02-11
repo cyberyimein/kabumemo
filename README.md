@@ -12,7 +12,7 @@ Kabumemo is an offline-friendly trading journal powered by a **Vue 3 + Vite fron
 
 - **Frontend UI**: A tabbed dashboard (Trades, Positions, Funds, Tax) that lets you enter and review data directly in the browser.
 - **Backend API**: Handles storage and business validation for transactions, funding groups, tax settlement, and exposes a unified REST interface.
-- **Data storage**: Every write is mirrored to both JSON files and a lightweight SQLite database (`kabumemo.db`) under `data/`, keeping human-editable backups and structured queries in sync.
+- **Data storage**: JSON files are the primary source of truth, and every write is mirrored to a lightweight SQLite database (`kabumemo.db`) under `data/`, keeping human-editable backups and structured queries in sync.
 
 The repository already includes a one-click startup batch script and end-to-end delete functionality for trades. The sections below provide a complete usage guide and feature overview.
 
@@ -150,8 +150,9 @@ The FastAPI server listens on `0.0.0.0:8000` inside the container; the `-p` flag
 | PUT    | `/api/transactions/{transaction_id}` | Update a transaction while enforcing funding group and position checks |
 | DELETE | `/api/transactions/{transaction_id}` | Delete a transaction and clean up any related tax records              |
 | GET    | `/api/positions`                     | Compute positions with per-currency breakdowns and realized P/L        |
+| GET    | `/api/positions/history`             | Fetch 1-year daily price history plus buy/sell markers for a position  |
 | GET    | `/api/funds`                         | Return fund snapshots plus currency-level aggregates and yearly ratios |
-| GET    | `/api/funding-groups`                | List funding groups; creates Default JPY/USD on first launch           |
+| GET    | `/api/funding-groups`                | List funding groups; creates JPY/USD on first launch                   |
 | POST   | `/api/funding-groups`                | Create or overwrite a funding group                                    |
 | PATCH  | `/api/funding-groups/{name}`         | Update a group’s currency, initial capital, or notes                   |
 | DELETE | `/api/funding-groups/{name}`         | Delete a group (at least one must remain)                              |
@@ -172,6 +173,7 @@ The UI uses tabs to organize primary workflows:
   - A refresh button pulls the newest data from the backend.
 - **Positions**
   - Calculates holdings with per-currency quantity/average-cost breakdowns, including realized P/L.
+  - Adds a single-select history view that shows 1-year daily prices with buy/sell markers (ECharts).
 - **Funds & Groups**
   - Manage funding groups (create, edit, delete) and visualize detailed fund snapshots with year-over-year metrics.
   - View currency-level aggregates to compare overall cash, holdings, and profitability across groups, now with an inline USD→JPY exchange-rate input that converts the merged summary into JPY in real time.
@@ -187,10 +189,10 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 ## Data Files
 
 - `transactions.json`: Transaction history, created on first API use.
-- `funding_groups.json`: Funding group definitions; default JPY and USD groups are generated on first run.
+- `funding_groups.json`: Funding group definitions; JPY and USD groups are generated on first run.
 - `tax_settlements.json`: Maintained by the tax settlement API.
 - `capital_adjustments.json`: Effective-dated capital additions per funding group.
-- `kabumemo.db`: SQLite mirror that stays in lockstep with the JSON files and powers structured queries or external tooling.
+- `kabumemo.db`: SQLite mirror that stays in lockstep with the JSON files and powers structured queries or external tooling. Delete it to force a JSON -> SQLite rebuild.
 - `data/backups/`: Reserved for future backup tooling.
 
 ### Maintenance scripts

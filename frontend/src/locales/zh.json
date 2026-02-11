@@ -37,14 +37,18 @@
       "create": "创建",
       "edit": "编辑",
       "cancel": "取消",
+      "close": "关闭",
       "today": "今天"
     },
     "states": {
-      "none": "暂无数据"
+      "none": "暂无数据",
+      "error": "发生错误"
     },
     "toggle": {
       "buy": "买入",
       "sell": "卖出",
+      "on": "开启",
+      "off": "关闭",
       "market": {
         "jp": "日股",
         "us": "美股"
@@ -85,6 +89,8 @@
       "crossCurrency": "跨币种卖出",
       "buyCurrency": "买入货币",
       "sellCurrency": "卖出货币",
+      "fxFromAmount": "卖出金额",
+      "fxToAmount": "买入金额",
       "taxed": "纳税标记",
       "memo": "备注"
     },
@@ -139,7 +145,8 @@
         "fundingGroup": "请选择同一资金组的交易。",
         "market": "请选择来自同一市场的交易。",
         "currency": "请选择使用同一资金货币的交易。",
-        "netQuantityMismatch": "买卖数量必须相抵为 0（当前为 {quantity}）。"
+        "netQuantityMismatch": "买卖数量必须相抵为 0（当前为 {quantity}）。",
+        "fxAmountRequired": "跨币种卖出需要填写买入/卖出金额。"
       },
       "table": {
         "select": "选择",
@@ -168,7 +175,8 @@
     "title": "持仓表",
     "description": "根据交易自动计算剩余仓位、平均成本与落地盈亏。",
     "actions": {
-      "refreshQuotes": "刷新行情"
+      "refreshQuotes": "刷新行情",
+      "viewHistory": "查看走势"
     },
     "quotesAsOf": "行情更新时间：{date}",
     "activeTitle": "当前持仓 ({count})",
@@ -190,6 +198,11 @@
     "toasts": {
       "refreshed": "持仓数据已更新",
       "quotesRefreshed": "行情已更新"
+    },
+    "history": {
+      "title": "价格走势 · {symbol}",
+      "loading": "正在加载价格走势...",
+      "empty": "暂无价格走势数据。"
     }
   },
   "funds": {

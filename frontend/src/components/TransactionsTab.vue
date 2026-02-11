@@ -181,16 +181,24 @@
               :empty-label="t('common.states.none')"
             />
           </label>
-          <label>
-            <span>{{ t("transactions.fields.cashCurrency") }}</span>
-            <BaseSelect
-              v-model="form.cash_currency"
-              :options="cashCurrencyOptions"
-            />
-          </label>
           <label v-if="tradeType === 'sell'" class="full">
             <span>{{ t("transactions.fields.crossCurrency") }}</span>
-            <input v-model="form.cross_currency" type="checkbox" />
+            <div class="toggle-group inline-toggle" role="radiogroup">
+              <button
+                type="button"
+                :class="['toggle-pill', { active: form.cross_currency }]"
+                @click="setCrossCurrency(true)"
+              >
+                {{ t("common.toggle.on") }}
+              </button>
+              <button
+                type="button"
+                :class="['toggle-pill', { active: !form.cross_currency }]"
+                @click="setCrossCurrency(false)"
+              >
+                {{ t("common.toggle.off") }}
+              </button>
+            </div>
           </label>
           <label v-if="tradeType === 'sell' && form.cross_currency">
             <span>{{ t("transactions.fields.buyCurrency") }}</span>
@@ -204,6 +212,15 @@
             <BaseSelect
               v-model="form.sell_currency"
               :options="crossCurrencyOptions"
+            />
+          </label>
+          <label v-if="tradeType === 'sell' && form.cross_currency">
+            <span>{{ t("transactions.fields.fxFromAmount") }}</span>
+            <input
+              v-model.number="form.fx_from_amount"
+              type="number"
+              step="0.01"
+              min="0"
             />
           </label>
           <label>
@@ -424,7 +441,9 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type {
+  Currency,
   FundingGroup,
+  FxExchangeRecord,
   TaxStatus,
   Transaction,
   TransactionCreate,
@@ -440,16 +459,32 @@ import { ApiError, calculateRoundYield } from "@/services/api";
 const props = defineProps<{
   transactions: Transaction[];
   fundingGroups: FundingGroup[];
+  fxExchanges: FxExchangeRecord[];
 }>();
+
+type FxDraft = {
+  exchange_date: string;
+  from_currency: Currency;
+  to_currency: Currency;
+  from_amount: number;
+  to_amount: number;
+  rate: number;
+};
+
+type TransactionCreatePayload = {
+  transaction: TransactionCreate;
+  fxDraft?: FxDraft | null;
+};
 
 type UpdateEventPayload = {
   id: string;
   data: TransactionUpdate;
+  fxDraft?: FxDraft | null;
   onDone: (success: boolean) => void;
 };
 
 const emit = defineEmits<{
-  (e: "create", payload: TransactionCreate): void;
+  (e: "create", payload: TransactionCreatePayload): void;
   (e: "refresh"): void;
   (e: "delete", id: string): void;
   (e: "update", payload: UpdateEventPayload): void;
@@ -544,7 +579,11 @@ const selectionIssues = computed(() => {
 const canCalculateYield = computed(() => selectionIssues.value.length === 0);
 const primarySelectionIssue = computed(() => selectionIssues.value[0] ?? null);
 
-type TransactionForm = TransactionCreate & { taxed: TaxStatus; memo?: string | null };
+type TransactionForm = TransactionCreate & {
+  taxed: TaxStatus;
+  memo?: string | null;
+  fx_from_amount: number | null;
+};
 
 const form = reactive<TransactionForm>(resetForm());
 
@@ -554,18 +593,6 @@ const fundingGroupOptions = computed(() =>
     value: group.name,
   }))
 );
-
-const cashCurrencyOptions = computed(() => [
-  {
-    label: t("common.currencies.JPY"),
-    value: "JPY",
-  },
-  {
-    label: t("common.currencies.USD"),
-    value: "USD",
-    disabled: form.market === "JP",
-  },
-]);
 
 const crossCurrencyOptions = computed(() => [
   {
@@ -622,6 +649,11 @@ watch(
     if (group) {
       if (!form.cross_currency) {
         form.cash_currency = form.market === "JP" ? "JPY" : group.currency;
+      } else {
+        const defaults = defaultCrossCurrencies(group.currency);
+        form.buy_currency = defaults.buy;
+        form.sell_currency = defaults.sell;
+        form.cash_currency = defaults.buy;
       }
     }
   }
@@ -651,20 +683,26 @@ watch(
     if (!enabled) {
       form.buy_currency = null;
       form.sell_currency = null;
+      form.fx_from_amount = null;
       return;
     }
     if (tradeType.value !== "sell") {
       form.cross_currency = false;
       return;
     }
-    form.buy_currency = form.buy_currency ?? "JPY";
-    form.sell_currency = form.sell_currency ?? "USD";
-    form.cash_currency = form.sell_currency;
+    const group = props.fundingGroups.find((item) => item.name === form.funding_group);
+    const defaults = defaultCrossCurrencies(group?.currency ?? "USD");
+    form.buy_currency = defaults.buy;
+    form.sell_currency = defaults.sell;
+    form.cash_currency = defaults.buy;
+    if (!form.fx_from_amount) {
+      form.fx_from_amount = null;
+    }
   }
 );
 
 watch(
-  () => form.sell_currency,
+  () => form.buy_currency,
   (value) => {
     if (form.cross_currency && value) {
       form.cash_currency = value;
@@ -730,6 +768,7 @@ function resetForm(): TransactionForm {
     market: "JP",
     taxed: "Y",
     memo: "",
+    fx_from_amount: null,
   };
 }
 
@@ -843,6 +882,15 @@ function populateFormFromTransaction(tx: Transaction) {
   form.sell_currency = tx.sell_currency ?? null;
   form.taxed = tx.taxed;
   form.memo = tx.memo ?? "";
+
+  const fx = fxLookup.value.get(tx.id);
+  if (tx.cross_currency && fx) {
+    form.fx_from_amount = Number(fx.from_amount);
+  } else if (tx.cross_currency) {
+    form.fx_from_amount = null;
+  } else {
+    form.fx_from_amount = null;
+  }
 }
 
 function formatNumber(value: number): string {
@@ -927,6 +975,13 @@ async function handleSubmit() {
     if (!form.buy_currency || !form.sell_currency || form.buy_currency === form.sell_currency) {
       return;
     }
+    if (form.fx_from_amount !== null && form.fx_from_amount <= 0) {
+      emit("notify", {
+        type: "error",
+        message: t("transactions.validation.fxAmountRequired"),
+      });
+      return;
+    }
   }
   pending.value = true;
   try {
@@ -951,11 +1006,30 @@ async function handleSubmit() {
       memo: normalizedMemo,
     };
 
+    const fxSellAmount = form.fx_from_amount ?? null;
+    const fxDraft: FxDraft | null =
+      form.cross_currency && fxSellAmount && fxSellAmount > 0
+        ? {
+            exchange_date: form.trade_date,
+            from_currency: form.sell_currency as Currency,
+            to_currency: form.buy_currency as Currency,
+            from_amount: Number(fxSellAmount),
+            to_amount: Number(form.gross_amount),
+            rate: computeFxRate(
+              form.sell_currency as Currency,
+              form.buy_currency as Currency,
+              Number(fxSellAmount),
+              Number(form.gross_amount)
+            ),
+          }
+        : null;
+
     if (isEditing.value && editingId.value) {
       await new Promise<void>((resolve) => {
         emit("update", {
           id: editingId.value as string,
           data: updatePayload,
+          fxDraft,
           onDone: (success: boolean) => {
             if (success) {
               resetFormState();
@@ -979,7 +1053,7 @@ async function handleSubmit() {
         taxed: updatePayload.taxed,
         memo: normalizedMemo ?? undefined,
       };
-      emit("create", createPayload);
+      emit("create", { transaction: createPayload, fxDraft });
       setTransactionsPage(1);
       resetFormState();
     }
@@ -990,6 +1064,35 @@ async function handleSubmit() {
 
 function setTradeType(type: "buy" | "sell") {
   tradeType.value = type;
+}
+
+function setCrossCurrency(value: boolean) {
+  form.cross_currency = value;
+}
+
+function defaultCrossCurrencies(groupCurrency: Currency) {
+  if (groupCurrency === "USD") {
+    return { buy: "USD" as Currency, sell: "JPY" as Currency };
+  }
+  return { buy: "JPY" as Currency, sell: "USD" as Currency };
+}
+
+function computeFxRate(
+  fromCurrency: Currency,
+  toCurrency: Currency,
+  fromAmount: number,
+  toAmount: number
+): number {
+  if (!fromAmount || !toAmount) {
+    return 0;
+  }
+  if (fromCurrency === "JPY" && toCurrency === "USD") {
+    return fromAmount / toAmount;
+  }
+  if (fromCurrency === "USD" && toCurrency === "JPY") {
+    return toAmount / fromAmount;
+  }
+  return fromAmount / toAmount;
 }
 
 function setMarket(type: "JP" | "US") {
@@ -1268,6 +1371,10 @@ function setMarket(type: "JP" | "US") {
 
 .toggle-pill:hover {
   color: var(--accent);
+
+.inline-toggle {
+  align-self: flex-start;
+}
 }
 
 .toggle-pill.active:not(.trade-toggle) {

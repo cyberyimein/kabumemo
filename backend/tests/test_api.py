@@ -47,7 +47,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
     resp = client.get("/api/funding-groups")
     assert resp.status_code == 200
     groups = resp.json()
-    assert any(group["name"] == "Default JPY" for group in groups)
+    assert any(group["name"] == "JPY" for group in groups)
 
     def dump_groups(models):
         return sorted(
@@ -65,7 +65,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
         "symbol": "7203.T",
         "quantity": 10,
         "gross_amount": 150000,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "cash_currency": "JPY",
         "market": "JP",
     }
@@ -78,7 +78,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
         "symbol": "7203.T",
         "quantity": -5,
         "gross_amount": 90000,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "cash_currency": "JPY",
         "market": "JP",
     }
@@ -93,7 +93,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
         "symbol": "7203.T",
         "quantity": -4,
         "gross_amount": 80000,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "cash_currency": "JPY",
         "market": "JP",
         "taxed": "N",
@@ -142,9 +142,9 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
     assert jpy_breakdown["quantity"] == 6
     assert jpy_breakdown["realized_pl"] == 20000
     group_breakdown = positions[0]["group_breakdown"]
-    assert any(entry["funding_group"] == "Default JPY" for entry in group_breakdown)
+    assert any(entry["funding_group"] == "JPY" for entry in group_breakdown)
     default_group_entry = next(
-        entry for entry in group_breakdown if entry["funding_group"] == "Default JPY"
+        entry for entry in group_breakdown if entry["funding_group"] == "JPY"
     )
     assert default_group_entry["currency"] == "JPY"
     assert default_group_entry["quantity"] == 6
@@ -155,7 +155,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
     assert funds_resp.status_code == 200
     payload = funds_resp.json()
     funds = {item["name"]: item for item in payload["funds"]}
-    default_fund = funds["Default JPY"]
+    default_fund = funds["JPY"]
     assert default_fund["cash_balance"] == -70000
     assert default_fund["holding_cost"] == 90000
     assert default_fund["current_total"] == 20000
@@ -174,7 +174,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
 
     tax_payload = {
         "transaction_id": sale_id,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "amount": 1000,
         "currency": "JPY",
     }
@@ -197,7 +197,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
 
     funds_after_tax = client.get("/api/funds").json()
     funds_map = {item["name"]: item for item in funds_after_tax["funds"]}
-    after_tax_default = funds_map["Default JPY"]
+    after_tax_default = funds_map["JPY"]
     assert after_tax_default["cash_balance"] == -71000
     assert after_tax_default["holding_cost"] == 90000
     assert after_tax_default["current_total"] == 19000
@@ -250,7 +250,7 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
     assert post_delete_breakdown["quantity"] == 10
     assert post_delete_breakdown["realized_pl"] == 0
     post_delete_group = positions_after_delete[0]["group_breakdown"]
-    assert post_delete_group[0]["funding_group"] == "Default JPY"
+    assert post_delete_group[0]["funding_group"] == "JPY"
     assert post_delete_group[0]["quantity"] == 10
     assert post_delete_group[0]["realized_pl"] == 0
 
@@ -275,11 +275,11 @@ def test_capital_additions_respected(client: TestClient, monkeypatch):
         "effective_date": "2026-01-01",
         "notes": "next year top-up",
     }
-    resp_future = client.post("/api/funding-groups/Default%20JPY/capital", json=future_payload)
+    resp_future = client.post("/api/funding-groups/JPY/capital", json=future_payload)
     assert resp_future.status_code == 201, resp_future.text
 
     funds_future = client.get("/api/funds").json()
-    future_default = next(item for item in funds_future["funds"] if item["name"] == "Default JPY")
+    future_default = next(item for item in funds_future["funds"] if item["name"] == "JPY")
     assert future_default["initial_amount"] == 0
     assert future_default["cash_balance"] == 0
     assert future_default["current_year_pl"] == 0
@@ -289,11 +289,11 @@ def test_capital_additions_respected(client: TestClient, monkeypatch):
         "effective_date": "2025-06-01",
         "notes": "mid-year contribution",
     }
-    resp_current = client.post("/api/funding-groups/Default%20JPY/capital", json=current_payload)
+    resp_current = client.post("/api/funding-groups/JPY/capital", json=current_payload)
     assert resp_current.status_code == 201, resp_current.text
 
     funds_current = client.get("/api/funds").json()
-    current_default = next(item for item in funds_current["funds"] if item["name"] == "Default JPY")
+    current_default = next(item for item in funds_current["funds"] if item["name"] == "JPY")
     assert current_default["initial_amount"] == 100000
     assert current_default["cash_balance"] == 100000
     assert current_default["total_pl"] == 0
@@ -330,7 +330,7 @@ def test_positions_include_pending_sell():
         symbol="8306",
         quantity=100,
         gross_amount=200000,
-        funding_group="Default JPY",
+        funding_group="JPY",
         cash_currency=Currency.JPY,
         market=Market.JP,
         taxed=TaxStatus.YES,
@@ -342,7 +342,7 @@ def test_positions_include_pending_sell():
         symbol="8306",
         quantity=-100,
         gross_amount=210000,
-        funding_group="Default JPY",
+        funding_group="JPY",
         cash_currency=Currency.JPY,
         market=Market.JP,
         taxed=TaxStatus.NO,
@@ -352,7 +352,7 @@ def test_positions_include_pending_sell():
     positions = compute_positions([buy, sell])
     assert len(positions) == 1
     position = positions[0]
-    assert position.symbol == "8306"
+    assert position.symbol == "8306.T"
     assert len(position.breakdown) == 1
     component = position.breakdown[0]
     assert component.currency.value == "JPY"
@@ -360,7 +360,7 @@ def test_positions_include_pending_sell():
     assert component.realized_pl == 10000
     assert len(position.group_breakdown) == 1
     group_entry = position.group_breakdown[0]
-    assert group_entry.funding_group == "Default JPY"
+    assert group_entry.funding_group == "JPY"
     assert group_entry.currency.value == "JPY"
     assert group_entry.quantity == 0
     assert group_entry.realized_pl == 10000
@@ -560,7 +560,7 @@ def test_tax_settlement_update_and_delete(client: TestClient):
         "symbol": "6758.T",
         "quantity": 20,
         "gross_amount": 200000,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "cash_currency": "JPY",
         "market": "JP",
     }
@@ -569,7 +569,7 @@ def test_tax_settlement_update_and_delete(client: TestClient):
         "symbol": "6758.T",
         "quantity": -10,
         "gross_amount": 130000,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "cash_currency": "JPY",
         "market": "JP",
     }
@@ -583,7 +583,7 @@ def test_tax_settlement_update_and_delete(client: TestClient):
 
     tax_payload = {
         "transaction_id": sell_id,
-        "funding_group": "Default JPY",
+        "funding_group": "JPY",
         "amount": 1500,
         "currency": "JPY",
     }
@@ -602,7 +602,7 @@ def test_tax_settlement_update_and_delete(client: TestClient):
 
     invalid_group = client.patch(
         f"/api/tax/settlements/{settlement_id}",
-        json={"funding_group": "Default USD"},
+        json={"funding_group": "USD"},
     )
     assert invalid_group.status_code == 400
 
@@ -623,7 +623,7 @@ def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
         "symbol": "AAPL",
         "quantity": 10,
         "gross_amount": 15000,
-        "funding_group": "Default USD",
+        "funding_group": "USD",
         "cash_currency": "USD",
         "market": "US",
     }
@@ -632,7 +632,7 @@ def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
         "symbol": "AAPL",
         "quantity": -5,
         "gross_amount": 8200,
-        "funding_group": "Default USD",
+        "funding_group": "USD",
         "cash_currency": "USD",
         "market": "US",
     }
@@ -644,7 +644,7 @@ def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
 
     missing_rate_payload = {
         "transaction_id": sale_id,
-        "funding_group": "Default USD",
+        "funding_group": "USD",
         "amount": 120,
         "currency": "USD",
     }
@@ -653,18 +653,18 @@ def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
 
     tax_payload = {
         "transaction_id": sale_id,
-        "funding_group": "Default USD",
+        "funding_group": "JPY",
         "amount": 120,
-        "currency": "USD",
-        "exchange_rate": 147.85,
+        "currency": "JPY",
+        "balance_exchange_rate": 150.0,
     }
     tax_resp = client.post("/api/tax/settlements", json=tax_payload)
     assert tax_resp.status_code == 201, tax_resp.text
     body = tax_resp.json()
-    assert body["currency"] == "USD"
+    assert body["currency"] == "JPY"
     assert body["amount"] == pytest.approx(120)
-    assert body["exchange_rate"] == pytest.approx(147.85)
-    assert body["jpy_equivalent"] == pytest.approx(17742.0)
+    assert body["exchange_rate"] is None
+    assert body["jpy_equivalent"] == pytest.approx(120.0)
 
     settlement_id = body["id"]
 
@@ -675,11 +675,79 @@ def test_usd_tax_settlement_requires_exchange_rate(client: TestClient):
     assert update_resp.status_code == 200, update_resp.text
     updated = update_resp.json()
     assert updated["amount"] == pytest.approx(150)
-    assert updated["exchange_rate"] == pytest.approx(149.1)
-    assert updated["jpy_equivalent"] == pytest.approx(22365.0)
+    assert updated["exchange_rate"] is None
+    assert updated["jpy_equivalent"] == pytest.approx(150.0)
 
     settlements = client.get("/api/tax/settlements").json()
     record = next(item for item in settlements if item["id"] == settlement_id)
-    assert record["currency"] == "USD"
-    assert record["funding_group"] == "Default USD"
-    assert record["jpy_equivalent"] == pytest.approx(22365.0)
+    assert record["currency"] == "JPY"
+    assert record["funding_group"] == "JPY"
+    assert record["jpy_equivalent"] == pytest.approx(150.0)
+
+
+def test_fx_exchange_computes_rate_from_amounts(client: TestClient):
+    payload = {
+        "exchange_date": "2025-09-01",
+        "from_currency": "JPY",
+        "to_currency": "USD",
+        "from_amount": 150000,
+        "to_amount": 1000,
+    }
+
+    resp = client.post("/api/fx-exchanges", json=payload)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["from_currency"] == "JPY"
+    assert body["to_currency"] == "USD"
+    assert body["from_amount"] == pytest.approx(150000)
+    assert body["to_amount"] == pytest.approx(1000)
+    assert body["rate"] == pytest.approx(150.0)
+
+
+def test_fx_exchange_computes_to_amount_from_rate(client: TestClient):
+    payload = {
+        "exchange_date": "2025-09-01",
+        "from_currency": "USD",
+        "to_currency": "JPY",
+        "from_amount": 1000,
+        "rate": 150,
+    }
+
+    resp = client.post("/api/fx-exchanges", json=payload)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["from_currency"] == "USD"
+    assert body["to_currency"] == "JPY"
+    assert body["from_amount"] == pytest.approx(1000)
+    assert body["to_amount"] == pytest.approx(150000)
+    assert body["rate"] == pytest.approx(150.0)
+
+
+def test_fx_exchange_requires_to_amount_or_rate(client: TestClient):
+    payload = {
+        "exchange_date": "2025-09-01",
+        "from_currency": "JPY",
+        "to_currency": "USD",
+        "from_amount": 150000,
+    }
+
+    resp = client.post("/api/fx-exchanges", json=payload)
+    assert resp.status_code == 422
+
+
+def test_cross_currency_requires_cash_currency_match_buy_currency(client: TestClient):
+    payload = {
+        "trade_date": "2025-09-10",
+        "symbol": "AAPL",
+        "quantity": -1,
+        "gross_amount": 1000,
+        "funding_group": "USD",
+        "cash_currency": "JPY",
+        "cross_currency": True,
+        "buy_currency": "USD",
+        "sell_currency": "JPY",
+        "market": "US",
+    }
+
+    resp = client.post("/api/transactions", json=payload)
+    assert resp.status_code == 422

@@ -20,6 +20,8 @@
             aria-atomic="true"
           >
             <strong>{{ t(`app.notifications.${notification.type}`) }}：</strong>
+  getQuotes,
+  refreshQuotes,
             <span>{{ notification.message }}</span>
           </div>
         </transition>
@@ -55,6 +57,7 @@
         v-if="currentTab === 'transactions'"
         :transactions="state.transactions"
         :funding-groups="state.fundingGroups"
+        :fx-exchanges="state.fxExchanges"
         @create="handleCreateTransaction"
         @update="handleUpdateTransaction"
         @delete="handleDeleteTransaction"
@@ -138,6 +141,7 @@ import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
 import type { LocaleCode } from "@/i18n";
 import type {
   AggregatedFundSnapshot,
+  Currency,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
   FxExchangeCreate,
@@ -157,9 +161,24 @@ import type {
 
 type TabId = "transactions" | "positions" | "funds" | "tax";
 
+type FxDraft = {
+  exchange_date: string;
+  from_currency: Currency;
+  to_currency: Currency;
+  from_amount: number;
+  to_amount: number;
+  rate: number;
+};
+
+type TransactionCreatePayload = {
+  transaction: TransactionCreate;
+  fxDraft?: FxDraft | null;
+};
+
 type TransactionUpdateEvent = {
   id: string;
   data: TransactionUpdate;
+  fxDraft?: FxDraft | null;
   onDone: (success: boolean) => void;
 };
 
@@ -240,6 +259,7 @@ async function refreshAllData(showToast = false) {
       getTaxSettlements(),
       getCapitalAdjustments(),
       getFxExchanges(),
+      getQuotes(),
     ]);
 
     const errors: string[] = [];
@@ -252,6 +272,7 @@ async function refreshAllData(showToast = false) {
       settlementsResult,
       capitalResult,
       fxResult,
+      quotesResult,
     ] = results;
 
     if (groupsResult.status === "fulfilled") {
@@ -297,6 +318,12 @@ async function refreshAllData(showToast = false) {
       errors.push(asErrorMessage(fxResult.reason));
     }
 
+    if (quotesResult.status === "fulfilled") {
+      state.quotes = quotesResult.value;
+    } else {
+      errors.push(asErrorMessage(quotesResult.reason));
+    }
+
     if (errors.length) {
       showNotification("error", errors[0]);
     } else if (showToast) {
@@ -337,11 +364,22 @@ function asErrorMessage(error: unknown): string {
   return "发生未知错误";
 }
 
-async function handleCreateTransaction(payload: TransactionCreate) {
+async function handleCreateTransaction(payload: TransactionCreatePayload) {
   try {
-    await createTransaction(payload);
+    const created = await createTransaction(payload.transaction);
+    if (payload.fxDraft) {
+      await createFxExchange({
+        ...payload.fxDraft,
+        transaction_id: created.id,
+      });
+    }
     showNotification("success", t("transactions.toasts.created"));
-    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+    await Promise.all([
+      reloadTransactions(),
+      reloadPositions(),
+      reloadFunds(),
+      reloadFxExchanges(),
+    ]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -350,6 +388,18 @@ async function handleCreateTransaction(payload: TransactionCreate) {
 async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
   try {
     await updateTransaction(payload.id, payload.data);
+    const existingFx = state.fxExchanges.find((item) => item.transaction_id === payload.id);
+    if (payload.fxDraft) {
+      if (existingFx) {
+        await deleteFxExchange(existingFx.id);
+      }
+      await createFxExchange({
+        ...payload.fxDraft,
+        transaction_id: payload.id,
+      });
+    } else if (existingFx) {
+      await deleteFxExchange(existingFx.id);
+    }
     payload.onDone(true);
     showNotification("success", t("transactions.toasts.updated"));
   } catch (error: unknown) {
@@ -359,7 +409,13 @@ async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
   }
 
   try {
-    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
+    await Promise.all([
+      reloadTransactions(),
+      reloadPositions(),
+      reloadFunds(),
+      reloadTaxSettlements(),
+      reloadFxExchanges(),
+    ]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -402,6 +458,7 @@ async function handleRefreshQuotes() {
 async function handleRefreshFunds() {
   await Promise.all([
     reloadFundingGroups(),
+    reloadTransactions(),
     reloadFunds(),
     reloadCapitalAdjustments(),
     reloadFxExchanges(),

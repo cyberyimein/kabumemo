@@ -9,6 +9,7 @@ import type {
   FundingGroupUpdate,
   HealthResponse,
   Position,
+  PositionHistoryResponse,
   QuoteSnapshot,
   RoundTripYieldRequest,
   RoundTripYieldResponse,
@@ -105,6 +106,15 @@ export function calculateRoundYield(
 // Positions ----------------------------------------------------------------------
 export function getPositions(): Promise<Position[]> {
   return request<Position[]>("/positions");
+}
+
+export function getPositionHistory(
+  symbol: string,
+  market: string,
+  period = "1y"
+): Promise<PositionHistoryResponse> {
+  const params = new URLSearchParams({ symbol, market, period });
+  return request<PositionHistoryResponse>(`/positions/history?${params.toString()}`);
 }
 
 // Quotes ------------------------------------------------------------------------

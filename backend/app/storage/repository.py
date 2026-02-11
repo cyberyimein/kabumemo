@@ -430,8 +430,15 @@ class LocalDataRepository:
         records: list[FxExchangeRecord] = []
         for item in payload:
             data = dict(item)
-            if "to_amount" not in data:
-                data["to_amount"] = 0.0
+            if "to_amount" not in data or data["to_amount"] in (None, ""):
+                rate = data.get("rate") or 0.0
+                from_amount = float(data.get("from_amount") or 0.0)
+                if data.get("from_currency") == Currency.JPY and data.get("to_currency") == Currency.USD:
+                    data["to_amount"] = from_amount / rate if rate else 0.0
+                elif data.get("from_currency") == Currency.USD and data.get("to_currency") == Currency.JPY:
+                    data["to_amount"] = from_amount * rate if rate else 0.0
+                else:
+                    data["to_amount"] = from_amount
             records.append(FxExchangeRecord(**data))
         return sorted(records, key=lambda item: (item.exchange_date, item.id))
 
@@ -439,7 +446,7 @@ class LocalDataRepository:
         return self.sqlite.load_fx_exchanges()
 
     def add_fx_exchange(self, payload: FxExchangeCreate) -> FxExchangeRecord:
-        record = FxExchangeRecord(id=str(uuid4()), to_amount=0.0, **payload.model_dump())
+        record = FxExchangeRecord(id=str(uuid4()), **payload.model_dump())
         records = self.list_fx_exchanges()
         records.append(record)
         self._write_fx_exchanges(records)

@@ -35,7 +35,8 @@ export interface FxExchangeBase {
   from_currency: Currency;
   to_currency: Currency;
   from_amount: number;
-  rate: number;
+  to_amount?: number;
+  rate?: number;
   notes?: string | null;
   transaction_id?: string | null;
 }
@@ -45,6 +46,7 @@ export type FxExchangeCreate = FxExchangeBase;
 export interface FxExchangeRecord extends FxExchangeBase {
   id: string;
   to_amount: number;
+  rate: number;
 }
 
 export interface TransactionBase {
@@ -136,6 +138,30 @@ export interface QuoteRecord {
 export interface QuoteSnapshot {
   as_of: string;
   records: QuoteRecord[];
+}
+
+export type TradeSide = "buy" | "sell";
+
+export interface PriceHistoryPoint {
+  date: string;
+  close: number;
+}
+
+export interface TradeMarker {
+  date: string;
+  price: number;
+  side: TradeSide;
+  quantity: number;
+  currency: Currency;
+  transaction_id: string;
+}
+
+export interface PositionHistoryResponse {
+  symbol: string;
+  market: Market;
+  currency: Currency;
+  series: PriceHistoryPoint[];
+  markers: TradeMarker[];
 }
 
 export interface FundSnapshot {
