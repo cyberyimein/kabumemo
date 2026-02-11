@@ -518,6 +518,16 @@ const transactionLookup = computed(() => {
   return map;
 });
 
+const fxLookup = computed(() => {
+  const map = new Map<string, FxExchangeRecord>();
+  for (const fx of props.fxExchanges) {
+    if (fx.transaction_id) {
+      map.set(fx.transaction_id, fx);
+    }
+  }
+  return map;
+});
+
 const selectedTransactions = computed(() =>
   selectedTransactionIds.value
     .map((id) => transactionLookup.value.get(id))
@@ -582,6 +592,8 @@ const primarySelectionIssue = computed(() => selectionIssues.value[0] ?? null);
 type TransactionForm = TransactionCreate & {
   taxed: TaxStatus;
   memo?: string | null;
+  buy_currency: Currency | null;
+  sell_currency: Currency | null;
   fx_from_amount: number | null;
 };
 
