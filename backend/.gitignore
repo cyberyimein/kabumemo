@@ -2,6 +2,4 @@ __pycache__/
 *.py[cod]
 .env
 .data/
-realdata/
-realdata/kabumemo/*.json
-realdata/export/*.csv
+

@@ -94,3 +94,8 @@ coverage/
 
 # API docs
 openapi*.json
+
+# Local data outputs
+realdata/
+realdata/kabumemo/*.json
+realdata/export/*.csv
