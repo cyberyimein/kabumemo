@@ -1,9 +1,17 @@
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <div>
-        <h1>{{ t("app.header.title") }}</h1>
-        <p class="tagline">{{ t("app.header.tagline") }}</p>
+      <div class="header-main">
+        <div>
+          <h1>{{ t("app.header.title") }}</h1>
+          <p class="tagline">{{ t("app.header.tagline") }}</p>
+        </div>
+        <div class="header-summary" aria-label="overview">
+          <article v-for="item in headerStats" :key="item.label" class="header-stat">
+            <span class="header-stat__label">{{ item.label }}</span>
+            <strong class="header-stat__value">{{ item.value }}</strong>
+          </article>
+        </div>
       </div>
       <div class="header-controls">
         <div class="status-chip" :class="healthStatus.className">
@@ -20,8 +28,6 @@
             aria-atomic="true"
           >
             <strong>{{ t(`app.notifications.${notification.type}`) }}：</strong>
-  getQuotes,
-  refreshQuotes,
             <span>{{ notification.message }}</span>
           </div>
         </transition>
@@ -79,26 +85,32 @@
         :funds="state.fundSnapshots.funds"
         :aggregated="state.fundSnapshots.aggregated"
         :capital-adjustments="state.capitalAdjustments"
+        :stock-splits="state.stockSplits"
         :fx-exchanges="state.fxExchanges"
         :transactions="state.transactions"
         @create="handleCreateFundingGroup"
         @delete="handleDeleteFundingGroup"
         @refresh="handleRefreshFunds"
         @add-capital="handleAddCapital"
+        @add-stock-split="handleAddStockSplit"
+        @delete-stock-split="handleDeleteStockSplit"
         @add-fx="handleAddFxExchange"
         @delete-fx="handleDeleteFxExchange"
       />
 
-      <TaxTab
+      <ImportTab
+        v-else-if="currentTab === 'import'"
+        :funding-groups="state.fundingGroups"
+        @imported="handleImportedTransactions"
+        @notify="handleNotify"
+      />
+
+      <AnnualTaxTab
         v-else
         :pending-transactions="pendingTaxTransactions"
-        :transactions="state.transactions"
-        :settlements="state.taxSettlements"
         :funding-groups="state.fundingGroups"
-        @settle="handleSettleTax"
-        @update="handleUpdateTaxSettlement"
-        @remove="handleDeleteTaxSettlement"
-        @refresh="handleRefreshTransactions"
+        @changed="handleAnnualTaxChanged"
+        @notify="handleNotify"
       />
     </template>
   </div>
@@ -109,20 +121,23 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import FundsTab from "@/components/FundsTab.vue";
+import ImportTab from "@/components/ImportTab.vue";
+import AnnualTaxTab from "@/components/AnnualTaxTab.vue";
 import PositionsTab from "@/components/PositionsTab.vue";
 import TabNav from "@/components/TabNav.vue";
-import TaxTab from "@/components/TaxTab.vue";
 import TransactionsTab from "@/components/TransactionsTab.vue";
 import {
   ApiError,
   addFundingCapital,
   createFxExchange,
   createFundingGroup,
+  createStockSplit,
   createTransaction,
   deleteFxExchange,
   deleteFundingGroup,
-  deleteTaxSettlement,
+  deleteStockSplit,
   deleteTransaction,
+  getAnnualTaxSettlements,
   getCapitalAdjustments,
   getFxExchanges,
   getFunds,
@@ -130,17 +145,16 @@ import {
   getHealth,
   getPositions,
   getQuotes,
+  getStockSplits,
   refreshQuotes,
-  getTaxSettlements,
   getTransactions,
-  settleTax,
-  updateTaxSettlement,
   updateTransaction,
 } from "@/services/api";
 import { SUPPORTED_LOCALES, setLocale } from "@/i18n";
 import type { LocaleCode } from "@/i18n";
 import type {
   AggregatedFundSnapshot,
+  AnnualTaxSettlement,
   Currency,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
@@ -151,15 +165,14 @@ import type {
   HealthResponse,
   Position,
   QuoteSnapshot,
-  TaxSettlementRequest,
-  TaxSettlementRecord,
-  TaxSettlementUpdate,
+  StockSplit,
+  StockSplitPayload,
   Transaction,
   TransactionCreate,
   TransactionUpdate,
 } from "@/types/api";
 
-type TabId = "transactions" | "positions" | "funds" | "tax";
+type TabId = "transactions" | "positions" | "funds" | "import" | "tax";
 
 type FxDraft = {
   exchange_date: string;
@@ -187,6 +200,11 @@ type CapitalAdditionEvent = {
   onDone: (success: boolean) => void;
 };
 
+type StockSplitEvent = {
+  data: StockSplitPayload;
+  onDone: (success: boolean) => void;
+};
+
 const { t, locale } = useI18n();
 
 const localeOptions = SUPPORTED_LOCALES;
@@ -208,9 +226,10 @@ const state = reactive({
     aggregated: [] as AggregatedFundSnapshot[],
   },
   fundingGroups: [] as FundingGroup[],
-  taxSettlements: [] as TaxSettlementRecord[],
   capitalAdjustments: [] as FundingCapitalAdjustment[],
+  stockSplits: [] as StockSplit[],
   fxExchanges: [] as FxExchangeRecord[],
+  annualTaxSettlements: [] as AnnualTaxSettlement[],
   quotes: { as_of: "", records: [] } as QuoteSnapshot,
 });
 
@@ -222,16 +241,32 @@ const notification = ref<{
 } | null>(null);
 const health = ref<HealthResponse | null>(null);
 
+const settledTaxYears = computed(() => new Set(state.annualTaxSettlements.map((item) => item.year)));
+
+function tradeYearOf(transaction: Transaction): number | null {
+  const raw = transaction.trade_date;
+  if (!raw) {
+    return null;
+  }
+  const year = Number.parseInt(String(raw).slice(0, 4), 10);
+  return Number.isFinite(year) ? year : null;
+}
+
 const pendingTaxTransactions = computed(() =>
-  state.transactions.filter(
-    (tx: Transaction) => tx.taxed === "N" && tx.quantity < 0
-  )
+  state.transactions.filter((tx: Transaction) => {
+    if (tx.taxed !== "N" || tx.quantity >= 0) {
+      return false;
+    }
+    const tradeYear = tradeYearOf(tx);
+    return tradeYear === null || !settledTaxYears.value.has(tradeYear);
+  })
 );
 
 const tabOptions = computed(() => [
   { id: "transactions", label: t("tabs.transactions"), badge: state.transactions.length },
   { id: "positions", label: t("tabs.positions"), badge: state.positions.length },
   { id: "funds", label: t("tabs.funds"), badge: state.fundingGroups.length },
+  { id: "import", label: t("tabs.import"), badge: 0 },
   { id: "tax", label: t("tabs.tax"), badge: pendingTaxTransactions.value.length },
 ]);
 
@@ -242,6 +277,24 @@ const healthStatus = computed(() => {
   return health.value.status === "ok"
     ? { label: t("app.status.online"), className: "healthy" }
     : { label: t("app.status.offline"), className: "error" };
+});
+
+const headerStats = computed(() => {
+  const activePositions = state.positions.filter((position) =>
+    position.breakdown.some((item) => item.quantity > 0)
+  ).length;
+  const fundTotal = state.fundSnapshots.aggregated.length
+    ? state.fundSnapshots.aggregated
+        .map((row) => `${row.currency} ${new Intl.NumberFormat("en-US", { maximumFractionDigits: row.currency === "JPY" ? 0 : 2 }).format(row.current_total)}`)
+        .join(" / ")
+    : t("app.overview.zeroState");
+
+  return [
+    { label: t("app.overview.cards.trades"), value: String(state.transactions.length) },
+    { label: t("app.overview.cards.positions"), value: String(activePositions) },
+    { label: t("app.overview.cards.tax"), value: String(pendingTaxTransactions.value.length) },
+    { label: t("app.overview.chartEyebrow"), value: fundTotal },
+  ];
 });
 
 onMounted(async () => {
@@ -256,9 +309,10 @@ async function refreshAllData(showToast = false) {
       getTransactions(),
       getPositions(),
       getFunds(),
-      getTaxSettlements(),
       getCapitalAdjustments(),
+      getStockSplits(),
       getFxExchanges(),
+      getAnnualTaxSettlements(),
       getQuotes(),
     ]);
 
@@ -269,9 +323,10 @@ async function refreshAllData(showToast = false) {
       transactionsResult,
       positionsResult,
       fundsResult,
-      settlementsResult,
       capitalResult,
+      stockSplitsResult,
       fxResult,
+      annualTaxResult,
       quotesResult,
     ] = results;
 
@@ -300,22 +355,28 @@ async function refreshAllData(showToast = false) {
       errors.push(asErrorMessage(fundsResult.reason));
     }
 
-    if (settlementsResult.status === "fulfilled") {
-      state.taxSettlements = settlementsResult.value;
-    } else {
-      errors.push(asErrorMessage(settlementsResult.reason));
-    }
-
     if (capitalResult.status === "fulfilled") {
       state.capitalAdjustments = capitalResult.value;
     } else {
       errors.push(asErrorMessage(capitalResult.reason));
     }
 
+    if (stockSplitsResult.status === "fulfilled") {
+      state.stockSplits = stockSplitsResult.value;
+    } else {
+      errors.push(asErrorMessage(stockSplitsResult.reason));
+    }
+
     if (fxResult.status === "fulfilled") {
       state.fxExchanges = fxResult.value;
     } else {
       errors.push(asErrorMessage(fxResult.reason));
+    }
+
+    if (annualTaxResult.status === "fulfilled") {
+      state.annualTaxSettlements = annualTaxResult.value;
+    } else {
+      errors.push(asErrorMessage(annualTaxResult.reason));
     }
 
     if (quotesResult.status === "fulfilled") {
@@ -413,7 +474,6 @@ async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
       reloadTransactions(),
       reloadPositions(),
       reloadFunds(),
-      reloadTaxSettlements(),
       reloadFxExchanges(),
     ]);
   } catch (error: unknown) {
@@ -425,14 +485,14 @@ async function handleDeleteTransaction(id: string) {
   try {
     await deleteTransaction(id);
     showNotification("success", t("transactions.toasts.deleted"));
-    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
+    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
 }
 
 async function handleRefreshTransactions() {
-  await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds(), reloadTaxSettlements()]);
+  await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
   showNotification("success", t("transactions.toasts.refreshed"));
 }
 
@@ -461,6 +521,7 @@ async function handleRefreshFunds() {
     reloadTransactions(),
     reloadFunds(),
     reloadCapitalAdjustments(),
+    reloadStockSplits(),
     reloadFxExchanges(),
   ]);
   showNotification("success", t("funds.toasts.refreshed"));
@@ -503,11 +564,41 @@ async function handleAddCapital(event: CapitalAdditionEvent) {
   }
 }
 
+async function handleAddStockSplit(event: StockSplitEvent) {
+  try {
+    await createStockSplit(event.data);
+    event.onDone(true);
+    showNotification("success", t("funds.stockSplits.toasts.created"));
+    await Promise.all([
+      reloadStockSplits(),
+      reloadPositions(),
+      reloadFunds(),
+    ]);
+  } catch (error: unknown) {
+    event.onDone(false);
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
+async function handleDeleteStockSplit(id: string) {
+  try {
+    await deleteStockSplit(id);
+    showNotification("success", t("funds.stockSplits.toasts.deleted"));
+    await Promise.all([
+      reloadStockSplits(),
+      reloadPositions(),
+      reloadFunds(),
+    ]);
+  } catch (error: unknown) {
+    showNotification("error", asErrorMessage(error));
+  }
+}
+
 async function handleAddFxExchange(payload: FxExchangeCreate) {
   try {
     await createFxExchange(payload);
     showNotification("success", t("funds.fx.toasts.created"));
-    await reloadFxExchanges();
+    await Promise.all([reloadFxExchanges(), reloadFunds()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -517,40 +608,24 @@ async function handleDeleteFxExchange(id: string) {
   try {
     await deleteFxExchange(id);
     showNotification("success", t("funds.fx.toasts.deleted"));
-    await reloadFxExchanges();
+    await Promise.all([reloadFxExchanges(), reloadFunds()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
 }
 
-async function handleSettleTax(payload: TaxSettlementRequest) {
+async function handleImportedTransactions() {
   try {
-    await settleTax(payload);
-    showNotification("success", t("tax.toasts.updated"));
-    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
+    await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
+    showNotification("success", t("imports.applyDone", { count: state.transactions.length }));
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
 }
 
-async function handleUpdateTaxSettlement(event: {
-  id: string;
-  data: TaxSettlementUpdate;
-}) {
+async function handleAnnualTaxChanged() {
   try {
-    await updateTaxSettlement(event.id, event.data);
-    showNotification("success", t("tax.toasts.updated"));
-    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
-  } catch (error: unknown) {
-    showNotification("error", asErrorMessage(error));
-  }
-}
-
-async function handleDeleteTaxSettlement(id: string) {
-  try {
-    await deleteTaxSettlement(id);
-    showNotification("success", t("tax.toasts.deleted"));
-    await Promise.all([reloadTransactions(), reloadFunds(), reloadTaxSettlements()]);
+    await Promise.all([reloadFunds(), reloadAnnualTaxSettlements()]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }
@@ -578,16 +653,20 @@ async function reloadFundingGroups() {
   state.fundingGroups = await getFundingGroups();
 }
 
-async function reloadTaxSettlements() {
-  state.taxSettlements = await getTaxSettlements();
-}
-
 async function reloadCapitalAdjustments() {
   state.capitalAdjustments = await getCapitalAdjustments();
 }
 
+async function reloadStockSplits() {
+  state.stockSplits = await getStockSplits();
+}
+
 async function reloadFxExchanges() {
   state.fxExchanges = await getFxExchanges();
+}
+
+async function reloadAnnualTaxSettlements() {
+  state.annualTaxSettlements = await getAnnualTaxSettlements();
 }
 </script>
 

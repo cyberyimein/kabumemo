@@ -22,12 +22,32 @@
     "toasts": {
       "dataRefreshed": "Data refreshed",
       "healthUnavailable": "Unable to reach backend health. Please ensure FastAPI is running."
+    },
+    "overview": {
+      "kicker": "Mobile Portfolio",
+      "title": "A trading dashboard that feels closer to a neobank than a spreadsheet.",
+      "description": "Use the top cards to scan your live trades, positions, FX activity, and tax pressure before diving into details.",
+      "chartEyebrow": "Fund Snapshot",
+      "chartCaption": "A simplified visualization based on the current aggregated fund totals.",
+      "chartEmpty": "Import or record trades to populate the overview chart.",
+      "zeroState": "No data yet",
+      "cards": {
+        "trades": "Trades",
+        "tradesMeta": "Current runtime dataset",
+        "positions": "Open Positions",
+        "positionsMeta": "Symbols still held",
+        "fx": "FX Entries",
+        "fxMeta": "Standalone exchange records",
+        "tax": "Pending Tax",
+        "taxMeta": "Non-NISA sells"
+      }
     }
   },
   "tabs": {
     "transactions": "Trades",
     "positions": "Positions",
     "funds": "Funds",
+    "import": "Import",
     "tax": "Tax"
   },
   "common": {
@@ -60,6 +80,7 @@
     },
     "labels": {
       "memo": "Memo",
+      "tags": "Tags",
       "month": "Month",
       "year": "Year"
     },
@@ -84,9 +105,15 @@
       "symbol": "Ticker",
       "quantity": "Quantity",
       "grossAmount": "Gross Amount",
+      "positionGroup": "Position Group",
+      "settlementGroup": "Settlement Group",
+      "tradeCurrency": "Trade Currency",
+      "tradeAmount": "Trade Amount",
+      "settlementCurrency": "Settlement Currency",
+      "settlementAmount": "Settlement Amount",
       "fundingGroup": "Funding Group",
       "cashCurrency": "Cash Currency",
-      "crossCurrency": "Cross-currency sell",
+      "crossCurrency": "Attach FX exchange",
       "buyCurrency": "Buy currency",
       "sellCurrency": "Sell currency",
       "fxFromAmount": "Sell amount",
@@ -97,7 +124,8 @@
     "placeholders": {
       "symbol": "7203.T",
       "memo": "Optional",
-      "fundingGroup": "Select a funding group"
+      "fundingGroup": "Select a funding group",
+      "settlementGroup": "Select a settlement group"
     },
     "taxOptions": {
       "Y": "Taxed (Y)",
@@ -127,6 +155,9 @@
     },
     "confirm": {
       "delete": "Delete the trade {symbol} on {date}?"
+    },
+    "validation": {
+      "settlementCurrencyMismatch": "Settlement currency must match the selected settlement group's currency."
     },
     "roundYield": {
       "enter": "Round Yield",
@@ -256,11 +287,12 @@
       "holdingCost": "Holding Cost",
       "current": "Current Total",
       "totalPl": "Total P&L",
+      "olderPl": "Earlier Years P&L",
       "currentYearPl": "YTD Realized P&L",
       "currentYearRatio": "YTD Return",
       "previousYearPl": "Prior Year Realized P&L",
       "previousYearRatio": "Prior Year Return",
-      "combinedLabel": "Combined ({currency})"
+      "combinedLabel": "Merged ({currency})"
     },
     "emptyAggregate": "No aggregate data",
     "exchangeRate": {
@@ -325,6 +357,35 @@
         "deleted": "FX exchange deleted"
       }
     },
+    "stockSplits": {
+      "title": "Stock Splits",
+      "description": "Record corporate stock split events so positions, average cost, and realized P&L are recalculated correctly.",
+      "submit": "Add split",
+      "fields": {
+        "date": "Effective date",
+        "symbol": "Ticker",
+        "market": "Market",
+        "ratioBefore": "Before",
+        "ratioAfter": "After",
+        "notes": "Notes"
+      },
+      "placeholders": {
+        "symbol": "8001 or NVDA"
+      },
+      "table": {
+        "date": "Date",
+        "symbol": "Ticker",
+        "market": "Market",
+        "ratio": "Ratio",
+        "notes": "Notes"
+      },
+      "empty": "No stock splits yet.",
+      "confirmDelete": "Delete this stock split?",
+      "toasts": {
+        "created": "Stock split added",
+        "deleted": "Stock split deleted"
+      }
+    },
     "confirm": {
       "mustKeepOne": "Keep at least one funding group.",
       "delete": "Delete funding group {name}?"
@@ -339,6 +400,9 @@
   "tax": {
     "title": "Tax Settlement",
     "description": "List untaxed sell trades; recording tax updates funding groups and tax status.",
+    "descriptionAnnual": "Record tax net amounts yearly. Non-NISA sells stay pending until annual settlement.",
+    "annualTitle": "Annual Tax Records",
+    "annualHint": "This records yearly net tax results only. It is no longer linked to individual sell transactions.",
     "pendingTitle": "Pending Trades ({count})",
     "table": {
       "date": "Date",
@@ -375,6 +439,7 @@
       "updated": "Tax record updated",
       "deleted": "Tax record removed"
     },
+    "pendingSummary": "There are currently {count} non-NISA sell trades pending annual tax settlement.",
     "historyTitle": "Recorded Taxes ({count})",
     "historyTable": {
       "recordedAt": "Recorded",
@@ -386,6 +451,51 @@
       "fundingGroup": "Funding Group",
       "actions": "Actions"
     },
-    "historyEmpty": "No tax settlements captured yet."
+    "historyEmpty": "No tax settlements captured yet.",
+    "errors": {
+      "load": "Unable to load annual tax records.",
+      "save": "Unable to save annual tax record.",
+      "delete": "Unable to delete annual tax record."
+    }
+  },
+  "imports": {
+    "title": "Broker Report Import",
+    "description": "Upload domestic and US broker reports for fast bulk import. Duplicate trades are skipped automatically.",
+    "formTitle": "Select Report Files",
+    "runtimeTarget": "This import writes directly into the live data directory used by the running app, not the realdata backup folder.",
+    "applyHint": "Applying the import appends new trades quickly and skips duplicates that already exist.",
+    "previewHint": "Preview rows are generated from the uploaded reports and current funding-group mapping.",
+    "fields": {
+      "domestic": "Domestic CSV",
+      "us": "US CSV",
+      "jpyPositionGroup": "JPY Position Group",
+      "jpySettlementGroup": "JPY Settlement Group",
+      "usdPositionGroup": "USD Position Group",
+      "usdSettlementGroup": "USD Settlement Group"
+    },
+    "actions": {
+      "preview": "Preview Import",
+      "apply": "Quick Import"
+    },
+    "previewTitle": "Import Preview ({count})",
+    "previewReady": "Generated {count} preview rows.",
+    "applyDone": "Imported {count} trades and skipped {skipped} duplicates.",
+    "table": {
+      "date": "Date",
+      "symbol": "Symbol",
+      "market": "Market",
+      "quantity": "Quantity",
+      "tradeAmount": "Trade Amount",
+      "settlementAmount": "Settlement Amount",
+      "positionGroup": "Position Group",
+      "settlementGroup": "Settlement Group",
+      "accountType": "Account Type",
+      "taxed": "Taxed"
+    },
+    "empty": "No preview yet.",
+    "errors": {
+      "preview": "Unable to generate import preview.",
+      "apply": "Unable to apply imported trades."
+    }
   }
 }

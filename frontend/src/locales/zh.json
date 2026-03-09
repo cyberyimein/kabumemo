@@ -22,12 +22,32 @@
     "toasts": {
       "dataRefreshed": "数据已刷新",
       "healthUnavailable": "无法获取后端健康状态，请确认 FastAPI 是否启动"
+    },
+    "overview": {
+      "kicker": "Mobile Portfolio",
+      "title": "一个更像数字银行而不是电子表格的交易面板。",
+      "description": "这里汇总当前交易、持仓、换汇和税务压力，让你在手机上也能快速判断组合状态。",
+      "chartEyebrow": "资金总览",
+      "chartCaption": "按当前资金聚合结果生成的简化可视化。",
+      "chartEmpty": "导入或录入交易后，这里会显示资金概览。",
+      "zeroState": "暂无数据",
+      "cards": {
+        "trades": "交易总数",
+        "tradesMeta": "当前运行数据",
+        "positions": "持仓中",
+        "positionsMeta": "仍有仓位的标的",
+        "fx": "换汇记录",
+        "fxMeta": "独立 FX 条目",
+        "tax": "待纳税",
+        "taxMeta": "非 NISA 卖出"
+      }
     }
   },
   "tabs": {
     "transactions": "交易表",
     "positions": "持仓表",
     "funds": "资金表",
+    "import": "导入",
     "tax": "纳税"
   },
   "common": {
@@ -60,6 +80,7 @@
     },
     "labels": {
       "memo": "备注",
+      "tags": "标签",
       "month": "月份",
       "year": "年份"
     },
@@ -84,9 +105,15 @@
       "symbol": "股票代码",
       "quantity": "数量",
       "grossAmount": "总金额",
+      "positionGroup": "持仓来源组",
+      "settlementGroup": "结算资金组",
+      "tradeCurrency": "成交币种",
+      "tradeAmount": "成交金额",
+      "settlementCurrency": "结算货币",
+      "settlementAmount": "结算金额",
       "fundingGroup": "资金组",
       "cashCurrency": "资金货币",
-      "crossCurrency": "跨币种卖出",
+      "crossCurrency": "附带换汇",
       "buyCurrency": "买入货币",
       "sellCurrency": "卖出货币",
       "fxFromAmount": "卖出金额",
@@ -97,7 +124,8 @@
     "placeholders": {
       "symbol": "7203.T",
       "memo": "可选",
-      "fundingGroup": "请选择资金组"
+      "fundingGroup": "请选择资金组",
+      "settlementGroup": "选择结算组"
     },
     "taxOptions": {
       "Y": "已纳税 (Y)",
@@ -127,6 +155,9 @@
     },
     "confirm": {
       "delete": "确认删除 {date} 的 {symbol} 交易吗？"
+    },
+    "validation": {
+      "settlementCurrencyMismatch": "结算货币必须和所选结算资金组的币种一致。"
     },
     "roundYield": {
       "enter": "一轮收益率",
@@ -256,11 +287,12 @@
       "holdingCost": "持仓成本",
       "current": "当前总额",
       "totalPl": "总盈亏",
+      "olderPl": "更早年份盈亏",
       "currentYearPl": "今年落地盈亏",
       "currentYearRatio": "今年收益率",
       "previousYearPl": "去年落地盈亏",
       "previousYearRatio": "去年收益率",
-      "combinedLabel": "合计 ({currency})"
+      "combinedLabel": "合并后 ({currency})"
     },
     "emptyAggregate": "暂无可合并的资金数据",
     "exchangeRate": {
@@ -325,6 +357,35 @@
         "deleted": "换汇记录已删除"
       }
     },
+    "stockSplits": {
+      "title": "拆股记录",
+      "description": "记录证券拆股事件，系统会据此重算持仓数量、平均成本与已实现盈亏。",
+      "submit": "添加拆股",
+      "fields": {
+        "date": "生效日期",
+        "symbol": "股票代码",
+        "market": "市场",
+        "ratioBefore": "拆分前",
+        "ratioAfter": "拆分后",
+        "notes": "备注"
+      },
+      "placeholders": {
+        "symbol": "8001 或 NVDA"
+      },
+      "table": {
+        "date": "日期",
+        "symbol": "股票",
+        "market": "市场",
+        "ratio": "比例",
+        "notes": "备注"
+      },
+      "empty": "暂无拆股记录。",
+      "confirmDelete": "确定删除这条拆股记录吗？",
+      "toasts": {
+        "created": "拆股记录已添加",
+        "deleted": "拆股记录已删除"
+      }
+    },
     "confirm": {
       "mustKeepOne": "至少保留一个资金组。",
       "delete": "确定删除资金组 {name} 吗？"
@@ -339,6 +400,9 @@
   "tax": {
     "title": "纳税处理",
     "description": "列出未纳税的卖出交易，记录纳税金额后会自动更新资金组与税务状态。",
+    "descriptionAnnual": "按年度登记纳税净额，非 NISA 卖出默认保留为待结算。",
+    "annualTitle": "年度纳税记录",
+    "annualHint": "这里只记录年度净纳税结果，不再绑定到单笔卖单。",
     "pendingTitle": "待处理交易 ({count})",
     "table": {
       "date": "日期",
@@ -375,6 +439,7 @@
       "updated": "纳税记录已更新",
       "deleted": "纳税记录已删除"
     },
+    "pendingSummary": "当前有 {count} 笔非 NISA 卖出交易尚未做年度纳税结算。",
     "historyTitle": "已登记纳税 ({count})",
     "historyTable": {
       "recordedAt": "登记日期",
@@ -386,6 +451,51 @@
       "fundingGroup": "资金组",
       "actions": "操作"
     },
-    "historyEmpty": "尚未记录纳税信息。"
+    "historyEmpty": "尚未记录纳税信息。",
+    "errors": {
+      "load": "无法加载年度纳税记录。",
+      "save": "无法保存年度纳税记录。",
+      "delete": "无法删除年度纳税记录。"
+    }
+  },
+  "imports": {
+    "title": "券商报表导入",
+    "description": "上传日股和美股报表，快速批量导入交易；重复记录会自动跳过。",
+    "formTitle": "选择报表文件",
+    "runtimeTarget": "当前导入会直接写入运行中的 data 目录交易数据，不会写入 realdata 备份目录。",
+    "applyHint": "应用导入后会快速追加新交易；已存在的重复记录会自动跳过。",
+    "previewHint": "预览结果来自当前上传的券商报告与资金组映射，确认无误后再应用。",
+    "fields": {
+      "domestic": "日股报表 CSV",
+      "us": "美股报表 CSV",
+      "jpyPositionGroup": "JPY 持仓来源组",
+      "jpySettlementGroup": "JPY 结算资金组",
+      "usdPositionGroup": "USD 持仓来源组",
+      "usdSettlementGroup": "USD 结算资金组"
+    },
+    "actions": {
+      "preview": "预览导入",
+      "apply": "快速导入"
+    },
+    "previewTitle": "导入预览 ({count})",
+    "previewReady": "已生成 {count} 条导入预览。",
+    "applyDone": "已导入 {count} 条交易，跳过 {skipped} 条重复记录。",
+    "table": {
+      "date": "日期",
+      "symbol": "代码",
+      "market": "市场",
+      "quantity": "数量",
+      "tradeAmount": "成交金额",
+      "settlementAmount": "结算金额",
+      "positionGroup": "持仓来源组",
+      "settlementGroup": "结算资金组",
+      "accountType": "账户类型",
+      "taxed": "纳税状态"
+    },
+    "empty": "暂无导入预览。",
+    "errors": {
+      "preview": "无法生成导入预览。",
+      "apply": "无法应用导入结果。"
+    }
   }
 }

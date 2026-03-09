@@ -1,4 +1,10 @@
 import type {
+  AnnualTaxSettlement,
+  AnnualTaxSettlementCreate,
+  AnnualTaxSettlementUpdate,
+  BrokerImportApplyRequest,
+  BrokerImportPreviewResponse,
+  BrokerImportPreviewRequest,
   FxExchangeCreate,
   FxExchangeRecord,
   FundSnapshot,
@@ -13,6 +19,8 @@ import type {
   QuoteSnapshot,
   RoundTripYieldRequest,
   RoundTripYieldResponse,
+  StockSplit,
+  StockSplitPayload,
   TaxSettlementRecord,
   TaxSettlementRequest,
   TaxSettlementUpdate,
@@ -179,6 +187,28 @@ export function getCapitalAdjustments(): Promise<FundingCapitalAdjustment[]> {
   return request<FundingCapitalAdjustment[]>("/funding-groups/capital");
 }
 
+export function getStockSplits(): Promise<StockSplit[]> {
+  return request<StockSplit[]>("/stock-splits").catch((error: unknown) => {
+    if (error instanceof ApiError && error.status === 404) {
+      return [];
+    }
+    throw error;
+  });
+}
+
+export function createStockSplit(payload: StockSplitPayload): Promise<StockSplit> {
+  return request<StockSplit>("/stock-splits", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteStockSplit(id: string): Promise<void> {
+  return request<void>(`/stock-splits/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
 // FX exchanges -----------------------------------------------------------------
 export function getFxExchanges(): Promise<FxExchangeRecord[]> {
   return request<FxExchangeRecord[]>("/fx-exchanges");
@@ -222,6 +252,53 @@ export function updateTaxSettlement(
 export function deleteTaxSettlement(id: string): Promise<void> {
   return request<void>(`/tax/settlements/${encodeURIComponent(id)}`, {
     method: "DELETE"
+  });
+}
+
+export function getAnnualTaxSettlements(): Promise<AnnualTaxSettlement[]> {
+  return request<AnnualTaxSettlement[]>("/tax/annual");
+}
+
+export function createAnnualTaxSettlement(
+  payload: AnnualTaxSettlementCreate
+): Promise<AnnualTaxSettlement> {
+  return request<AnnualTaxSettlement>("/tax/annual", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateAnnualTaxSettlement(
+  id: string,
+  payload: AnnualTaxSettlementUpdate
+): Promise<AnnualTaxSettlement> {
+  return request<AnnualTaxSettlement>(`/tax/annual/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteAnnualTaxSettlement(id: string): Promise<void> {
+  return request<void>(`/tax/annual/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function previewBrokerImport(
+  payload: BrokerImportPreviewRequest
+): Promise<BrokerImportPreviewResponse> {
+  return request<BrokerImportPreviewResponse>("/imports/broker/preview", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function applyBrokerImport(
+  payload: BrokerImportApplyRequest
+): Promise<BrokerImportPreviewResponse> {
+  return request<BrokerImportPreviewResponse>("/imports/broker/apply", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

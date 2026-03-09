@@ -57,47 +57,70 @@
       </form>
 
       <div class="surface">
-        <h3>{{ t("funds.listTitle", { count: fundingGroups.length }) }}</h3>
+        <div class="section-toolbar">
+          <h3>{{ t("funds.listTitle", { count: fundingGroups.length }) }}</h3>
+          <div class="section-toolbar__actions">
+            <span v-if="selectedFundingGroup" class="selection-pill">
+              {{ selectedFundingGroup.name }}
+            </span>
+            <button
+              type="button"
+              class="ghost-btn"
+              :disabled="!selectedFundingGroup"
+              @click="handleAddCapitalForSelected"
+            >
+              {{ t("funds.actions.addCapital") }}
+            </button>
+            <button
+              type="button"
+              class="danger-btn"
+              :disabled="!selectedFundingGroup"
+              @click="handleDeleteSelectedGroup"
+            >
+              {{ t("common.actions.delete") }}
+            </button>
+          </div>
+        </div>
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
+                <th class="select-column">{{ t("common.select") }}</th>
                 <th>{{ t("funds.table.name") }}</th>
-                <th>{{ t("funds.table.currency") }}</th>
                 <th class="numeric">{{ t("funds.table.initial") }}</th>
                 <th>{{ t("funds.table.notes") }}</th>
-                <th>{{ t("funds.table.actions") }}</th>
+                <th>{{ t("common.labels.tags") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!fundingGroups.length">
                 <td colspan="5" class="empty">{{ t("funds.emptyGroups") }}</td>
               </tr>
-              <tr v-for="group in pagedFundingGroups" :key="group.name">
+              <tr
+                v-for="group in pagedFundingGroups"
+                :key="group.name"
+                :class="['interactive-row', { 'is-selected': selectedFundingGroupName === group.name }]"
+                @click="selectFundingGroup(group.name)"
+              >
+                <td class="select-column" @click.stop>
+                  <input
+                    type="radio"
+                    name="funding-group-select"
+                    :checked="selectedFundingGroupName === group.name"
+                    :aria-label="group.name"
+                    @change="selectFundingGroup(group.name)"
+                  />
+                </td>
                 <td>{{ group.name }}</td>
-                <td>{{ currencyLabel(group.currency) }}</td>
                 <td class="numeric">
                   {{ formatCurrency(group.initial_amount, group.currency) }}
                 </td>
-                <td>{{ group.notes || "-" }}</td>
-                  <td>
-                    <div class="actions-cell">
-                      <button
-                        class="ghost-btn"
-                        type="button"
-                        @click="openCapitalDialog(group)"
-                      >
-                        {{ t("funds.actions.addCapital") }}
-                      </button>
-                      <button
-                        class="danger-btn"
-                        type="button"
-                        @click="confirmDelete(group.name)"
-                      >
-                        {{ t("common.actions.delete") }}
-                      </button>
-                    </div>
-                  </td>
+                <td class="notes-cell">{{ group.notes || '-' }}</td>
+                <td>
+                  <div class="inline-tags">
+                    <span class="flat-tag">{{ currencyLabel(group.currency) }}</span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -119,43 +142,27 @@
           <thead>
             <tr>
               <th>{{ t("funds.snapshotTable.name") }}</th>
-              <th>{{ t("funds.snapshotTable.currency") }}</th>
               <th class="numeric">{{ t("funds.snapshotTable.initial") }}</th>
               <th class="numeric">{{ t("funds.snapshotTable.cash") }}</th>
               <th class="numeric">{{ t("funds.snapshotTable.holdingCost") }}</th>
               <th class="numeric">{{ t("funds.snapshotTable.current") }}</th>
-              <th class="numeric">{{ t("funds.snapshotTable.pl") }}</th>
-              <th class="numeric">{{ t("funds.snapshotTable.currentYearPl") }}</th>
-              <th class="numeric">{{ t("funds.snapshotTable.currentYearRatio") }}</th>
-              <th class="numeric">{{ t("funds.snapshotTable.previousYearPl") }}</th>
-              <th class="numeric">{{ t("funds.snapshotTable.previousYearRatio") }}</th>
+              <th>{{ t("common.labels.tags") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!funds.length">
-              <td colspan="11" class="empty">{{ t("funds.emptySnapshot") }}</td>
+              <td colspan="6" class="empty">{{ t("funds.emptySnapshot") }}</td>
             </tr>
             <tr v-for="item in pagedFunds" :key="item.name">
               <td>{{ item.name }}</td>
-              <td>{{ currencyLabel(item.currency) }}</td>
               <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
               <td class="numeric">{{ formatCurrency(item.cash_balance, item.currency) }}</td>
               <td class="numeric">{{ formatCurrency(item.holding_cost, item.currency) }}</td>
               <td class="numeric">{{ formatCurrency(item.current_total, item.currency) }}</td>
-              <td :class="['numeric', valueClass(item.total_pl)]">
-                {{ formatCurrency(item.total_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', valueClass(item.current_year_pl)]">
-                {{ formatCurrency(item.current_year_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', ratioClass(item.current_year_pl_ratio)]">
-                {{ formatRatio(item.current_year_pl_ratio) }}
-              </td>
-              <td :class="['numeric', valueClass(item.previous_year_pl)]">
-                {{ formatCurrency(item.previous_year_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', ratioClass(item.previous_year_pl_ratio)]">
-                {{ formatRatio(item.previous_year_pl_ratio) }}
+              <td>
+                <div class="inline-tags">
+                  <span class="flat-tag">{{ currencyLabel(item.currency) }}</span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -202,7 +209,6 @@
           <thead>
             <tr>
               <th>{{ t("funds.aggregateTable.currency") }}</th>
-              <th class="numeric">{{ t("funds.aggregateTable.groups") }}</th>
               <th class="numeric">{{ t("funds.aggregateTable.initial") }}</th>
               <th class="numeric">{{ t("funds.aggregateTable.cash") }}</th>
               <th class="numeric">{{ t("funds.aggregateTable.holdingCost") }}</th>
@@ -212,36 +218,15 @@
               <th class="numeric">{{ t("funds.aggregateTable.currentYearRatio") }}</th>
               <th class="numeric">{{ t("funds.aggregateTable.previousYearPl") }}</th>
               <th class="numeric">{{ t("funds.aggregateTable.previousYearRatio") }}</th>
+              <th class="numeric">{{ t("funds.aggregateTable.olderPl") }}</th>
+              <th>{{ t("common.labels.tags") }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!aggregated.length">
-              <td colspan="11" class="empty">{{ t("funds.emptyAggregate") }}</td>
+            <tr v-if="!combinedTotals">
+              <td colspan="12" class="empty">{{ t("funds.emptyAggregate") }}</td>
             </tr>
-            <tr v-for="item in pagedAggregated" :key="item.currency">
-              <td>{{ currencyLabel(item.currency) }}</td>
-              <td class="numeric">{{ item.group_count }}</td>
-              <td class="numeric">{{ formatCurrency(item.initial_amount, item.currency) }}</td>
-              <td class="numeric">{{ formatCurrency(item.cash_balance, item.currency) }}</td>
-              <td class="numeric">{{ formatCurrency(item.holding_cost, item.currency) }}</td>
-              <td class="numeric">{{ formatCurrency(item.current_total, item.currency) }}</td>
-              <td :class="['numeric', valueClass(item.total_pl)]">
-                {{ formatCurrency(item.total_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', valueClass(item.current_year_pl)]">
-                {{ formatCurrency(item.current_year_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', ratioClass(item.current_year_pl_ratio)]">
-                {{ formatRatio(item.current_year_pl_ratio) }}
-              </td>
-              <td :class="['numeric', valueClass(item.previous_year_pl)]">
-                {{ formatCurrency(item.previous_year_pl, item.currency) }}
-              </td>
-              <td :class="['numeric', ratioClass(item.previous_year_pl_ratio)]">
-                {{ formatRatio(item.previous_year_pl_ratio) }}
-              </td>
-            </tr>
-            <tr v-if="combinedTotals" class="combined-row">
+            <tr v-else class="combined-row">
               <td>
                 {{
                   t("funds.aggregateTable.combinedLabel", {
@@ -249,19 +234,10 @@
                   })
                 }}
               </td>
-              <td class="numeric">{{ combinedTotals.group_count }}</td>
-              <td class="numeric">
-                {{ formatCurrency(combinedTotals.initial_amount, combinedTotals.currency) }}
-              </td>
-              <td class="numeric">
-                {{ formatCurrency(combinedTotals.cash_balance, combinedTotals.currency) }}
-              </td>
-              <td class="numeric">
-                {{ formatCurrency(combinedTotals.holding_cost, combinedTotals.currency) }}
-              </td>
-              <td class="numeric">
-                {{ formatCurrency(combinedTotals.current_total, combinedTotals.currency) }}
-              </td>
+              <td class="numeric">{{ formatCurrency(combinedTotals.initial_amount, combinedTotals.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(combinedTotals.cash_balance, combinedTotals.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(combinedTotals.holding_cost, combinedTotals.currency) }}</td>
+              <td class="numeric">{{ formatCurrency(combinedTotals.current_total, combinedTotals.currency) }}</td>
               <td :class="['numeric', valueClass(combinedTotals.total_pl)]">
                 {{ formatCurrency(combinedTotals.total_pl, combinedTotals.currency) }}
               </td>
@@ -277,17 +253,19 @@
               <td :class="['numeric', ratioClass(combinedTotals.previous_year_pl_ratio)]">
                 {{ formatRatio(combinedTotals.previous_year_pl_ratio) }}
               </td>
+              <td :class="['numeric', valueClass(olderCombinedPl)]">
+                {{ formatCurrency(olderCombinedPl, combinedTotals.currency) }}
+              </td>
+              <td>
+                <div class="inline-tags">
+                  <span class="flat-tag">{{ t("funds.aggregateTable.groups") }} {{ combinedTotals.group_count }}</span>
+                  <span class="flat-tag">{{ t("funds.exchangeRate.label") }} {{ effectiveExchangeRate ? effectiveExchangeRate.toFixed(2) : '-' }}</span>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <PaginationControls
-        v-if="aggregateTotalItems || aggregateTotalPages > 1"
-        :page="aggregatePage"
-        :total-pages="aggregateTotalPages"
-        :total-items="aggregateTotalItems"
-        @update:page="setAggregatePage"
-      />
     </div>
 
     <div class="surface fx-panel">
@@ -296,13 +274,23 @@
           <h3>{{ t("funds.fx.title") }}</h3>
           <p class="fx-description">{{ t("funds.fx.description") }}</p>
         </div>
-        <button
-          type="button"
-          class="ghost-btn"
-          @click="fxPanelOpen = !fxPanelOpen"
-        >
-          {{ fxPanelOpen ? t("funds.fx.collapse") : t("funds.fx.expand") }}
-        </button>
+        <div class="section-toolbar__actions">
+          <button
+            type="button"
+            class="danger-btn"
+            :disabled="!selectedFxExchange"
+            @click="deleteSelectedFx"
+          >
+            {{ t("common.actions.delete") }}
+          </button>
+          <button
+            type="button"
+            class="ghost-btn"
+            @click="fxPanelOpen = !fxPanelOpen"
+          >
+            {{ fxPanelOpen ? t("funds.fx.collapse") : t("funds.fx.expand") }}
+          </button>
+        </div>
       </header>
 
       <div v-if="fxPanelOpen" class="fx-body">
@@ -319,7 +307,7 @@
           <div class="form-grid">
             <label>
               <span>{{ t("funds.fx.fields.date") }}</span>
-              <input v-model="fxForm.exchange_date" type="date" required />
+              <BaseDatePicker v-model="fxForm.exchange_date" />
             </label>
             <label>
               <span>{{ t("funds.fx.fields.from") }}</span>
@@ -378,46 +366,171 @@
           <table>
             <thead>
               <tr>
+                <th class="select-column">{{ t("common.select") }}</th>
                 <th>{{ t("funds.fx.table.date") }}</th>
-                <th>{{ t("funds.fx.table.from") }}</th>
                 <th class="numeric">{{ t("funds.fx.table.fromAmount") }}</th>
-                <th>{{ t("funds.fx.table.to") }}</th>
                 <th class="numeric">{{ t("funds.fx.table.toAmount") }}</th>
-                <th class="numeric">{{ t("funds.fx.table.rate") }}</th>
-                <th>{{ t("funds.fx.table.transaction") }}</th>
-                <th>{{ t("funds.fx.table.actions") }}</th>
+                <th>{{ t("funds.fx.fields.notes") }}</th>
+                <th>{{ t("common.labels.tags") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!fxExchanges.length">
-                <td colspan="8" class="empty">{{ t("funds.fx.empty") }}</td>
+                <td colspan="6" class="empty">{{ t("funds.fx.empty") }}</td>
               </tr>
-              <tr v-for="item in fxExchanges" :key="item.id">
+              <tr
+                v-for="item in fxExchanges"
+                :key="item.id"
+                :class="['interactive-row', { 'is-selected': selectedFxExchangeId === item.id }]"
+                @click="selectFxExchange(item.id)"
+              >
+                <td class="select-column" @click.stop>
+                  <input
+                    type="radio"
+                    name="fx-select"
+                    :checked="selectedFxExchangeId === item.id"
+                    :aria-label="item.id"
+                    @change="selectFxExchange(item.id)"
+                  />
+                </td>
                 <td>{{ item.exchange_date }}</td>
-                <td>{{ currencyLabel(item.from_currency) }}</td>
                 <td class="numeric">
                   {{ formatCurrency(item.from_amount, item.from_currency) }}
                 </td>
-                <td>{{ currencyLabel(item.to_currency) }}</td>
                 <td class="numeric">
                   {{ formatCurrency(item.to_amount, item.to_currency) }}
                 </td>
-                <td class="numeric">{{ item.rate }}</td>
-                <td>{{ item.transaction_id || "-" }}</td>
+                <td class="notes-cell">{{ item.notes || '-' }}</td>
                 <td>
-                  <button
-                    type="button"
-                    class="danger-btn"
-                    @click="confirmDeleteFx(item.id)"
-                  >
-                    {{ t("common.actions.delete") }}
-                  </button>
+                  <div class="inline-tags">
+                    <span class="flat-tag">{{ currencyLabel(item.from_currency) }} → {{ currencyLabel(item.to_currency) }}</span>
+                    <span class="flat-tag">{{ t("funds.fx.table.rate") }} {{ item.rate }}</span>
+                  </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+
+    <div class="surface">
+      <div class="section-toolbar">
+        <div>
+          <h3>{{ t("funds.stockSplits.title") }}</h3>
+          <p class="capital-history-description">
+            {{ t("funds.stockSplits.description") }}
+          </p>
+        </div>
+        <div class="section-toolbar__actions">
+          <button
+            type="button"
+            class="danger-btn"
+            :disabled="!selectedStockSplit"
+            @click="deleteSelectedStockSplit"
+          >
+            {{ t("common.actions.delete") }}
+          </button>
+        </div>
+      </div>
+      <form class="fx-form" @submit.prevent="handleStockSplitSubmit">
+        <div class="form-grid">
+          <label>
+            <span>{{ t("funds.stockSplits.fields.date") }}</span>
+            <BaseDatePicker v-model="stockSplitForm.effective_date" />
+          </label>
+          <label>
+            <span>{{ t("funds.stockSplits.fields.symbol") }}</span>
+            <input
+              v-model.trim="stockSplitForm.symbol"
+              type="text"
+              required
+              :placeholder="t('funds.stockSplits.placeholders.symbol')"
+            />
+          </label>
+          <label>
+            <span>{{ t("funds.stockSplits.fields.market") }}</span>
+            <BaseSelect v-model="stockSplitForm.market" :options="marketOptions" />
+          </label>
+          <label>
+            <span>{{ t("funds.stockSplits.fields.ratioBefore") }}</span>
+            <input
+              v-model.number="stockSplitForm.ratio_before"
+              type="number"
+              step="0.0001"
+              min="0"
+              required
+            />
+          </label>
+          <label>
+            <span>{{ t("funds.stockSplits.fields.ratioAfter") }}</span>
+            <input
+              v-model.number="stockSplitForm.ratio_after"
+              type="number"
+              step="0.0001"
+              min="0"
+              required
+            />
+          </label>
+          <label class="full">
+            <span>{{ t("funds.stockSplits.fields.notes") }}</span>
+            <textarea v-model.trim="stockSplitForm.notes" rows="2"></textarea>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn" :disabled="stockSplitPending">
+            {{ t("funds.stockSplits.submit") }}
+          </button>
+        </div>
+      </form>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th class="select-column">{{ t("common.select") }}</th>
+              <th>{{ t("funds.stockSplits.table.date") }}</th>
+              <th>{{ t("funds.stockSplits.table.symbol") }}</th>
+              <th>{{ t("funds.stockSplits.table.market") }}</th>
+              <th>{{ t("funds.stockSplits.table.ratio") }}</th>
+              <th>{{ t("funds.stockSplits.table.notes") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!stockSplits.length">
+              <td colspan="6" class="empty">{{ t("funds.stockSplits.empty") }}</td>
+            </tr>
+            <tr
+              v-for="item in pagedStockSplits"
+              :key="item.id"
+              :class="['interactive-row', { 'is-selected': selectedStockSplitId === item.id }]"
+              @click="selectStockSplit(item.id)"
+            >
+              <td class="select-column" @click.stop>
+                <input
+                  type="radio"
+                  name="stock-split-select"
+                  :checked="selectedStockSplitId === item.id"
+                  :aria-label="item.id"
+                  @change="selectStockSplit(item.id)"
+                />
+              </td>
+              <td>{{ item.effective_date }}</td>
+              <td>{{ item.symbol }}</td>
+              <td>{{ marketLabel(item.market) }}</td>
+              <td>{{ formatSplitRatio(item.ratio_before, item.ratio_after) }}</td>
+              <td class="notes-cell">{{ item.notes || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls
+        v-if="stockSplitsTotalItems || stockSplitsTotalPages > 1"
+        :page="stockSplitsPage"
+        :total-pages="stockSplitsTotalPages"
+        :total-items="stockSplitsTotalItems"
+        @update:page="setStockSplitsPage"
+      />
     </div>
 
     <div class="surface">
@@ -428,38 +541,55 @@
             {{ t("funds.capitalHistory.description") }}
           </p>
         </div>
-        <span v-if="capitalTotalItems" class="capital-history-count">
-          {{ t("funds.capitalHistory.count", { count: capitalTotalItems }) }}
-        </span>
+        <div class="section-toolbar__actions">
+          <span v-if="capitalTotalItems" class="capital-history-count">
+            {{ t("funds.capitalHistory.count", { count: capitalTotalItems }) }}
+          </span>
+        </div>
       </div>
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
+              <th class="select-column">{{ t("common.select") }}</th>
               <th>{{ t("funds.capitalHistory.table.effectiveDate") }}</th>
               <th>{{ t("funds.capitalHistory.table.group") }}</th>
               <th class="numeric">{{ t("funds.capitalHistory.table.amount") }}</th>
-              <th>{{ t("funds.capitalHistory.table.currency") }}</th>
               <th>{{ t("funds.capitalHistory.table.notes") }}</th>
+              <th>{{ t("common.labels.tags") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!capitalTotalItems">
-              <td colspan="5" class="empty">
+              <td colspan="6" class="empty">
                 {{ t("funds.capitalHistory.empty") }}
               </td>
             </tr>
-            <tr v-for="record in pagedCapitalAdjustments" :key="record.id">
+            <tr
+              v-for="record in pagedCapitalAdjustments"
+              :key="record.id"
+              :class="['interactive-row', { 'is-selected': selectedCapitalAdjustmentId === record.id }]"
+              @click="selectCapitalAdjustment(record.id)"
+            >
+              <td class="select-column" @click.stop>
+                <input
+                  type="radio"
+                  name="capital-select"
+                  :checked="selectedCapitalAdjustmentId === record.id"
+                  :aria-label="record.id"
+                  @change="selectCapitalAdjustment(record.id)"
+                />
+              </td>
               <td>{{ formatEffectiveDate(record.effective_date) }}</td>
               <td>{{ record.funding_group }}</td>
               <td class="numeric">{{ formatCurrency(record.amount, capitalCurrency(record)) }}</td>
-              <td>{{ currencyLabel(capitalCurrency(record)) }}</td>
+              <td class="notes-cell">{{ record.notes || '-' }}</td>
               <td>
-                <div class="capital-notes-cell">
-                  <span>{{ record.notes || "-" }}</span>
+                <div class="inline-tags">
+                  <span class="flat-tag">{{ currencyLabel(capitalCurrency(record)) }}</span>
                   <span
                     v-if="isFutureEffectiveDate(record.effective_date)"
-                    class="capital-status capital-status--scheduled"
+                    class="flat-tag"
                   >
                     {{ t("funds.capitalHistory.futureBadge") }}
                   </span>
@@ -509,7 +639,7 @@
           </label>
           <label>
             <span>{{ t("funds.capitalDialog.date") }}</span>
-            <input v-model="capitalForm.effective_date" type="date" required />
+            <BaseDatePicker v-model="capitalForm.effective_date" />
           </label>
           <label>
             <span>{{ t("funds.capitalDialog.notes") }}</span>
@@ -543,6 +673,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import PaginationControls from "./ui/PaginationControls.vue";
+import BaseDatePicker from "./ui/BaseDatePicker.vue";
 import { usePagination } from "@/composables/usePagination";
 import type {
   AggregatedFundSnapshot,
@@ -553,6 +684,9 @@ import type {
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
   FundingGroup,
+  Market,
+  StockSplit,
+  StockSplitPayload,
   Transaction,
 } from "@/types/api";
 import BaseSelect from "./ui/BaseSelect.vue";
@@ -562,6 +696,7 @@ const props = defineProps<{
   funds: FundSnapshot[];
   aggregated: AggregatedFundSnapshot[];
   capitalAdjustments: FundingCapitalAdjustment[];
+  stockSplits: StockSplit[];
   fxExchanges: FxExchangeRecord[];
   transactions: Transaction[];
 }>();
@@ -571,11 +706,18 @@ type CapitalAdditionEvent = {
   onDone: (success: boolean) => void;
 };
 
+type StockSplitEvent = {
+  data: StockSplitPayload;
+  onDone: (success: boolean) => void;
+};
+
 const emit = defineEmits<{
   (e: "create", payload: FundingGroup): void;
   (e: "delete", name: string): void;
   (e: "refresh"): void;
   (e: "add-capital", payload: CapitalAdditionEvent): void;
+  (e: "add-stock-split", payload: StockSplitEvent): void;
+  (e: "delete-stock-split", splitId: string): void;
   (e: "add-fx", payload: FxExchangeCreate): void;
   (e: "delete-fx", exchangeId: string): void;
 }>();
@@ -610,7 +752,41 @@ const capitalForm = reactive<CapitalFormState>({
 });
 
 const capitalPending = ref(false);
+const stockSplitPending = ref(false);
 const fxPanelOpen = ref(true);
+const selectedFundingGroupName = ref<string | null>(null);
+const selectedFxExchangeId = ref<string | null>(null);
+const selectedCapitalAdjustmentId = ref<string | null>(null);
+const selectedStockSplitId = ref<string | null>(null);
+
+const selectedFundingGroup = computed(() => {
+  if (!selectedFundingGroupName.value) {
+    return null;
+  }
+  return props.fundingGroups.find((group) => group.name === selectedFundingGroupName.value) ?? null;
+});
+
+const selectedFxExchange = computed(() => {
+  if (!selectedFxExchangeId.value) {
+    return null;
+  }
+  return props.fxExchanges.find((item) => item.id === selectedFxExchangeId.value) ?? null;
+});
+
+const selectedCapitalAdjustment = computed(() => {
+  if (!selectedCapitalAdjustmentId.value) {
+    return null;
+  }
+  return props.capitalAdjustments.find((item) => item.id === selectedCapitalAdjustmentId.value) ?? null;
+});
+
+const selectedStockSplit = computed(() => {
+  if (!selectedStockSplitId.value) {
+    return null;
+  }
+  return props.stockSplits.find((item) => item.id === selectedStockSplitId.value) ?? null;
+});
+
 const capitalValid = computed(() => {
   return (
     capitalDialog.group !== null &&
@@ -619,6 +795,46 @@ const capitalValid = computed(() => {
     capitalForm.effective_date.trim().length > 0
   );
 });
+
+watch(
+  () => props.fundingGroups,
+  (groups) => {
+    if (selectedFundingGroupName.value && !groups.some((group) => group.name === selectedFundingGroupName.value)) {
+      selectedFundingGroupName.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.fxExchanges,
+  (items) => {
+    if (selectedFxExchangeId.value && !items.some((item) => item.id === selectedFxExchangeId.value)) {
+      selectedFxExchangeId.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.capitalAdjustments,
+  (items) => {
+    if (selectedCapitalAdjustmentId.value && !items.some((item) => item.id === selectedCapitalAdjustmentId.value)) {
+      selectedCapitalAdjustmentId.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.stockSplits,
+  (items) => {
+    if (selectedStockSplitId.value && !items.some((item) => item.id === selectedStockSplitId.value)) {
+      selectedStockSplitId.value = null;
+    }
+  },
+  { immediate: true }
+);
 
 const currencyOptions = computed(() => [
   {
@@ -630,6 +846,35 @@ const currencyOptions = computed(() => [
     value: "USD" as Currency,
   },
 ]);
+
+const marketOptions = computed(() => [
+  {
+    label: t("common.toggle.market.jp"),
+    value: "JP" as Market,
+  },
+  {
+    label: t("common.toggle.market.us"),
+    value: "US" as Market,
+  },
+]);
+
+type StockSplitFormState = {
+  symbol: string;
+  market: Market;
+  effective_date: string;
+  ratio_before: number;
+  ratio_after: number;
+  notes: string;
+};
+
+const stockSplitForm = reactive<StockSplitFormState>({
+  symbol: "",
+  market: "JP",
+  effective_date: todayIso(),
+  ratio_before: 1,
+  ratio_after: 1,
+  notes: "",
+});
 
 type FxFormState = {
   exchange_date: string;
@@ -715,19 +960,6 @@ const pagedFunds = computed(() =>
   props.funds.slice(fundsOffset.value, fundsOffset.value + fundsPageSize)
 );
 
-const {
-  page: aggregatePage,
-  totalPages: aggregateTotalPages,
-  totalItems: aggregateTotalItems,
-  offset: aggregateOffset,
-  pageSize: aggregatePageSize,
-  setPage: setAggregatePage,
-} = usePagination(computed(() => props.aggregated.length));
-
-const pagedAggregated = computed(() =>
-  props.aggregated.slice(aggregateOffset.value, aggregateOffset.value + aggregatePageSize)
-);
-
 const sortedCapitalAdjustments = computed(() => {
   return [...props.capitalAdjustments].sort((a, b) => {
     if (a.effective_date === b.effective_date) {
@@ -754,6 +986,48 @@ const pagedCapitalAdjustments = computed(() =>
     capitalOffset.value + capitalPageSize
   )
 );
+
+const sortedStockSplits = computed(() => {
+  return [...props.stockSplits].sort((a, b) => {
+    if (a.effective_date === b.effective_date) {
+      return a.symbol.localeCompare(b.symbol);
+    }
+    return b.effective_date.localeCompare(a.effective_date);
+  });
+});
+
+const {
+  page: stockSplitsPage,
+  totalPages: stockSplitsTotalPages,
+  totalItems: stockSplitsTotalItems,
+  offset: stockSplitsOffset,
+  pageSize: stockSplitsPageSize,
+  setPage: setStockSplitsPage,
+} = usePagination(computed(() => sortedStockSplits.value.length), {
+  pageSize: 10,
+});
+
+const pagedStockSplits = computed(() =>
+  sortedStockSplits.value.slice(
+    stockSplitsOffset.value,
+    stockSplitsOffset.value + stockSplitsPageSize
+  )
+);
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function computeRatio(numerator: number, denominator: number): number | null {
+  return Math.abs(denominator) > 1e-9 ? numerator / denominator : null;
+}
+
+function roundRatio(value: number | null): number | null {
+  if (value === null) {
+    return null;
+  }
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
 
 const BASE_CURRENCY: Currency = "JPY";
 const exchangeRateInput = ref<string | number>("150");
@@ -846,42 +1120,6 @@ function convertToBase(value: number, currency: Currency, rate: number | null): 
   return value * rate;
 }
 
-function roundCurrency(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function computeRatio(numerator: number, denominator: number): number | null {
-  return Math.abs(denominator) > 1e-9 ? numerator / denominator : null;
-}
-
-function roundRatio(value: number | null): number | null {
-  if (value === null) {
-    return null;
-  }
-  return Math.round(value * 1_000_000) / 1_000_000;
-}
-
-function finalizeAccumulator(bucket: CombinedAccumulator): AggregatedFundSnapshot {
-  const currentRatio = roundRatio(computeRatio(bucket.current_year_pl, bucket.baseline_current));
-  const previousRatio = roundRatio(
-    computeRatio(bucket.previous_year_pl, bucket.baseline_previous)
-  );
-
-  return {
-    currency: BASE_CURRENCY,
-    group_count: bucket.group_count,
-    initial_amount: roundCurrency(bucket.initial_amount),
-    cash_balance: roundCurrency(bucket.cash_balance),
-    holding_cost: roundCurrency(bucket.holding_cost),
-    current_total: roundCurrency(bucket.current_total),
-    total_pl: roundCurrency(bucket.total_pl),
-    current_year_pl: roundCurrency(bucket.current_year_pl),
-    current_year_pl_ratio: currentRatio,
-    previous_year_pl: roundCurrency(bucket.previous_year_pl),
-    previous_year_pl_ratio: previousRatio,
-  };
-}
-
 const combinedTotals = computed<AggregatedFundSnapshot | null>(() => {
   if (!props.aggregated.length) {
     return null;
@@ -910,7 +1148,30 @@ const combinedTotals = computed<AggregatedFundSnapshot | null>(() => {
     bucket.baseline_previous += convertToBase(baselinePrevious, item.currency, rate);
   });
 
-  return finalizeAccumulator(bucket);
+  return {
+    currency: BASE_CURRENCY,
+    group_count: bucket.group_count,
+    initial_amount: roundCurrency(bucket.initial_amount),
+    cash_balance: roundCurrency(bucket.cash_balance),
+    holding_cost: roundCurrency(bucket.holding_cost),
+    current_total: roundCurrency(bucket.current_total),
+    total_pl: roundCurrency(bucket.total_pl),
+    current_year_pl: roundCurrency(bucket.current_year_pl),
+    current_year_pl_ratio: roundRatio(computeRatio(bucket.current_year_pl, bucket.baseline_current)),
+    previous_year_pl: roundCurrency(bucket.previous_year_pl),
+    previous_year_pl_ratio: roundRatio(computeRatio(bucket.previous_year_pl, bucket.baseline_previous)),
+  };
+});
+
+const olderCombinedPl = computed(() => {
+  if (!combinedTotals.value) {
+    return 0;
+  }
+  return roundCurrency(
+    combinedTotals.value.total_pl
+      - combinedTotals.value.current_year_pl
+      - combinedTotals.value.previous_year_pl
+  );
 });
 
 function handleRateBlur() {
@@ -924,8 +1185,7 @@ function handleRateBlur() {
 
   const parsed = parsedExchangeRate.value;
   if (parsed && parsed > 0) {
-    const formatted = parsed.toFixed(2);
-    exchangeRateInput.value = formatted;
+    exchangeRateInput.value = parsed.toFixed(2);
     lastValidExchangeRate.value = parsed;
     return;
   }
@@ -946,6 +1206,10 @@ function resetForm(): void {
 
 function currencyLabel(currency: Currency): string {
   return currency === "USD" ? t("common.currencies.USD") : t("common.currencies.JPY");
+}
+
+function marketLabel(market: Market): string {
+  return market === "US" ? t("common.toggle.market.us") : t("common.toggle.market.jp");
 }
 
 function formatCurrency(value: number, currency: Currency): string {
@@ -987,6 +1251,10 @@ function formatRatio(value: number | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatSplitRatio(before: number, after: number): string {
+  return `${before}:${after}`;
 }
 
 function valueClass(value: number): Record<string, boolean> {
@@ -1033,6 +1301,17 @@ function openCapitalDialog(group: FundingGroup) {
   capitalForm.notes = "";
 }
 
+function selectFundingGroup(name: string) {
+  selectedFundingGroupName.value = name;
+}
+
+function handleAddCapitalForSelected() {
+  if (!selectedFundingGroup.value) {
+    return;
+  }
+  openCapitalDialog(selectedFundingGroup.value);
+}
+
 function closeCapitalDialog() {
   if (capitalPending.value) {
     return;
@@ -1063,6 +1342,38 @@ function handleCapitalSubmit() {
   });
 }
 
+function handleStockSplitSubmit() {
+  if (!stockSplitForm.symbol.trim()) {
+    return;
+  }
+  if (stockSplitForm.ratio_before <= 0 || stockSplitForm.ratio_after <= 0) {
+    return;
+  }
+  stockSplitPending.value = true;
+  emit("add-stock-split", {
+    data: {
+      symbol: stockSplitForm.symbol.trim(),
+      market: stockSplitForm.market,
+      effective_date: stockSplitForm.effective_date,
+      ratio_before: Number(stockSplitForm.ratio_before),
+      ratio_after: Number(stockSplitForm.ratio_after),
+      notes: stockSplitForm.notes.trim() || undefined,
+    },
+    onDone(success) {
+      stockSplitPending.value = false;
+      if (!success) {
+        return;
+      }
+      stockSplitForm.symbol = "";
+      stockSplitForm.market = "JP";
+      stockSplitForm.effective_date = todayIso();
+      stockSplitForm.ratio_before = 1;
+      stockSplitForm.ratio_after = 1;
+      stockSplitForm.notes = "";
+    },
+  });
+}
+
 function handleFxSubmit() {
   if (fxForm.from_currency === fxForm.to_currency) {
     return;
@@ -1086,9 +1397,33 @@ function handleFxSubmit() {
   fxForm.notes = "";
 }
 
+function selectFxExchange(id: string) {
+  selectedFxExchangeId.value = id;
+}
+
 function confirmDeleteFx(id: string) {
   if (window.confirm(t("funds.fx.confirmDelete"))) {
     emit("delete-fx", id);
+  }
+}
+
+function deleteSelectedFx() {
+  if (!selectedFxExchange.value) {
+    return;
+  }
+  confirmDeleteFx(selectedFxExchange.value.id);
+}
+
+function selectStockSplit(id: string) {
+  selectedStockSplitId.value = id;
+}
+
+function deleteSelectedStockSplit() {
+  if (!selectedStockSplit.value) {
+    return;
+  }
+  if (window.confirm(t("funds.stockSplits.confirmDelete"))) {
+    emit("delete-stock-split", selectedStockSplit.value.id);
   }
 }
 
@@ -1101,6 +1436,17 @@ function confirmDelete(name: string) {
     emit("delete", name);
   }
 }
+
+function handleDeleteSelectedGroup() {
+  if (!selectedFundingGroup.value) {
+    return;
+  }
+  confirmDelete(selectedFundingGroup.value.name);
+}
+
+function selectCapitalAdjustment(id: string) {
+  selectedCapitalAdjustmentId.value = id;
+}
 </script>
 
 <style scoped>
@@ -1108,21 +1454,13 @@ function confirmDelete(name: string) {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
+  gap: 1.25rem;
   padding: clamp(1.6rem, 3vw, 2.4rem);
   overflow: hidden;
 }
 
 .funds-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.08) 58%, rgba(255, 255, 255, 0)),
-    radial-gradient(circle at 90% 10%, rgba(255, 200, 67, 0.18), transparent 55%);
-  mix-blend-mode: overlay;
-  opacity: 0.42;
+  content: none;
 }
 
 .funds-panel > * {
@@ -1166,8 +1504,8 @@ function confirmDelete(name: string) {
 .surface {
   border-radius: var(--radius-lg);
   border: 1px solid var(--divider);
-  background: linear-gradient(180deg, var(--panel-alt), var(--panel));
-  box-shadow: var(--shadow-soft);
+  background: var(--panel-alt);
+  box-shadow: none;
   padding: clamp(1.3rem, 2.6vw, 1.8rem);
   display: flex;
   flex-direction: column;
@@ -1175,10 +1513,10 @@ function confirmDelete(name: string) {
 }
 
 .surface h3 {
-  font-size: 0.95rem;
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
 }
 
 .capital-history-header {
@@ -1199,6 +1537,14 @@ function confirmDelete(name: string) {
   font-size: 0.85rem;
   align-self: center;
   white-space: nowrap;
+}
+
+.notes-cell {
+  min-width: 180px;
+  max-width: 320px;
+  white-space: normal;
+  line-height: 1.45;
+  color: var(--text-dim);
 }
 
 .capital-status {
@@ -1277,7 +1623,7 @@ function confirmDelete(name: string) {
   border-radius: var(--radius-md);
   border: 1px solid var(--divider);
   background: var(--panel);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .table-scroll table {
@@ -1285,10 +1631,10 @@ function confirmDelete(name: string) {
 }
 
 .table-scroll thead {
-  background: linear-gradient(180deg, rgba(11, 61, 145, 0.08), rgba(11, 61, 145, 0));
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.65px;
+  background: var(--panel-soft);
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 0.78rem;
 }
 
@@ -1308,7 +1654,7 @@ function confirmDelete(name: string) {
 }
 
 .table-scroll tbody tr:hover {
-  background: rgba(15, 167, 201, 0.08);
+  background: rgba(30, 156, 90, 0.04);
 }
 
 .empty {
@@ -1362,15 +1708,9 @@ function confirmDelete(name: string) {
   font-weight: 600;
 }
 
-.actions-cell {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .ghost-btn {
   border: 1px solid var(--divider);
-  background: transparent;
+  background: #fff;
   color: var(--text);
   padding: 0.45rem 0.9rem;
   border-radius: var(--radius-sm);
@@ -1379,8 +1719,8 @@ function confirmDelete(name: string) {
 }
 
 .ghost-btn:hover {
-  background: rgba(15, 167, 201, 0.1);
-  color: var(--accent);
+  background: var(--panel-soft);
+  color: var(--accent-strong);
 }
 
 .ghost-btn:disabled {
@@ -1463,6 +1803,47 @@ function confirmDelete(name: string) {
   font-size: 0.8rem;
   color: var(--accent-red);
   font-weight: 600;
+}
+
+.select-column {
+  width: 3rem;
+  text-align: center;
+}
+
+.select-column input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.interactive-row {
+  cursor: pointer;
+  transition: background var(--transition), box-shadow var(--transition);
+}
+
+.interactive-row.is-selected {
+  box-shadow: inset 0 0 0 1px rgba(30, 156, 90, 0.28);
+  background: rgba(30, 156, 90, 0.06);
+}
+
+.selection-details {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--divider);
+  background: #fff;
+}
+
+.selection-details__label {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.selection-details__content {
+  color: var(--text-dim);
+  line-height: 1.5;
 }
 
 @media (max-width: 720px) {

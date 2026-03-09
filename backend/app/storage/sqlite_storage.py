@@ -6,10 +6,14 @@ from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
 from ..models.schemas import (
+    AnnualTaxSettlement,
     FxExchangeRecord,
     FundingCapitalAdjustment,
     FundingGroup,
     QuoteRecord,
+    RealizedPnLAllocation,
+    RealizedPnLRecord,
+    StockSplitRecord,
     TaxSettlementRecord,
     Transaction,
 )
@@ -52,6 +56,13 @@ class SQLiteStorage:
             gross_amount REAL NOT NULL,
             funding_group TEXT NOT NULL,
             cash_currency TEXT NOT NULL,
+            position_group TEXT,
+            settlement_group TEXT,
+            trade_currency TEXT,
+            trade_amount REAL,
+            settlement_currency TEXT,
+            settlement_amount REAL,
+            broker_account_type TEXT NOT NULL DEFAULT 'UNKNOWN',
             cross_currency INTEGER NOT NULL DEFAULT 0,
             buy_currency TEXT,
             sell_currency TEXT,
@@ -84,6 +95,43 @@ class SQLiteStorage:
         CREATE INDEX IF NOT EXISTS idx_tax_settlements_transaction
             ON tax_settlements (transaction_id);
 
+        CREATE TABLE IF NOT EXISTS annual_tax_settlements (
+            id TEXT PRIMARY KEY,
+            year INTEGER NOT NULL,
+            funding_group TEXT NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL,
+            notes TEXT,
+            recorded_at TEXT NOT NULL,
+            FOREIGN KEY (funding_group) REFERENCES funding_groups(name)
+                ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_annual_tax_settlements_year
+            ON annual_tax_settlements (year, funding_group);
+
+        CREATE TABLE IF NOT EXISTS realized_pnl_records (
+            id TEXT PRIMARY KEY,
+            sell_transaction_id TEXT NOT NULL,
+            trade_date TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            market TEXT NOT NULL,
+            broker_account_type TEXT NOT NULL,
+            position_currency TEXT NOT NULL,
+            settlement_currency TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            matched_quantity REAL NOT NULL DEFAULT 0,
+            unmatched_quantity REAL NOT NULL DEFAULT 0,
+            proceeds_amount REAL NOT NULL,
+            cost_basis REAL NOT NULL,
+            realized_pl REAL NOT NULL,
+            allocations_json TEXT NOT NULL,
+            memo TEXT,
+            FOREIGN KEY (sell_transaction_id) REFERENCES transactions(id)
+                ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_realized_pnl_trade_date
+            ON realized_pnl_records (trade_date, symbol, sell_transaction_id);
+
         CREATE TABLE IF NOT EXISTS capital_adjustments (
             id TEXT PRIMARY KEY,
             funding_group TEXT NOT NULL,
@@ -95,6 +143,18 @@ class SQLiteStorage:
         );
         CREATE INDEX IF NOT EXISTS idx_capital_adjustments_group
             ON capital_adjustments (funding_group, effective_date);
+
+        CREATE TABLE IF NOT EXISTS stock_splits (
+            id TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            market TEXT NOT NULL,
+            effective_date TEXT NOT NULL,
+            ratio_before REAL NOT NULL,
+            ratio_after REAL NOT NULL,
+            notes TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_stock_splits_symbol
+            ON stock_splits (symbol, market, effective_date);
 
         CREATE TABLE IF NOT EXISTS fx_exchanges (
             id TEXT PRIMARY KEY,
@@ -138,10 +198,40 @@ class SQLiteStorage:
             connection.execute(
                 "ALTER TABLE transactions ADD COLUMN cross_currency INTEGER NOT NULL DEFAULT 0;"
             )
+        if "position_group" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN position_group TEXT;")
+        if "settlement_group" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN settlement_group TEXT;")
+        if "trade_currency" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN trade_currency TEXT;")
+        if "trade_amount" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN trade_amount REAL;")
+        if "settlement_currency" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN settlement_currency TEXT;")
+        if "settlement_amount" not in columns:
+            connection.execute("ALTER TABLE transactions ADD COLUMN settlement_amount REAL;")
+        if "broker_account_type" not in columns:
+            connection.execute(
+                "ALTER TABLE transactions ADD COLUMN broker_account_type TEXT NOT NULL DEFAULT 'UNKNOWN';"
+            )
         if "buy_currency" not in columns:
             connection.execute("ALTER TABLE transactions ADD COLUMN buy_currency TEXT;")
         if "sell_currency" not in columns:
             connection.execute("ALTER TABLE transactions ADD COLUMN sell_currency TEXT;")
+
+        realized_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(realized_pnl_records);").fetchall()
+        }
+        if realized_columns:
+            if "matched_quantity" not in realized_columns:
+                connection.execute(
+                    "ALTER TABLE realized_pnl_records ADD COLUMN matched_quantity REAL NOT NULL DEFAULT 0;"
+                )
+            if "unmatched_quantity" not in realized_columns:
+                connection.execute(
+                    "ALTER TABLE realized_pnl_records ADD COLUMN unmatched_quantity REAL NOT NULL DEFAULT 0;"
+                )
 
     # ------------------------------------------------------------------
     # Bulk mirror helpers
@@ -155,6 +245,13 @@ class SQLiteStorage:
                 float(tx.gross_amount),
                 tx.funding_group,
                 getattr(tx.cash_currency, "value", tx.cash_currency),
+                tx.position_group,
+                tx.settlement_group,
+                getattr(tx.trade_currency, "value", tx.trade_currency),
+                tx.trade_amount,
+                getattr(tx.settlement_currency, "value", tx.settlement_currency),
+                tx.settlement_amount,
+                getattr(tx.broker_account_type, "value", tx.broker_account_type),
                 1 if tx.cross_currency else 0,
                 getattr(tx.buy_currency, "value", tx.buy_currency),
                 getattr(tx.sell_currency, "value", tx.sell_currency),
@@ -171,9 +268,77 @@ class SQLiteStorage:
                     """
                     INSERT INTO transactions (
                         id, trade_date, symbol, quantity, gross_amount,
-                        funding_group, cash_currency, cross_currency, buy_currency,
+                        funding_group, cash_currency, position_group, settlement_group,
+                        trade_currency, trade_amount, settlement_currency, settlement_amount,
+                        broker_account_type, cross_currency, buy_currency,
                         sell_currency, market, taxed, memo
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+
+    def replace_annual_tax_settlements(self, settlements: Iterable[AnnualTaxSettlement]) -> None:
+        rows: Sequence[tuple] = [
+            (
+                settlement.id,
+                settlement.year,
+                settlement.funding_group,
+                float(settlement.amount),
+                getattr(settlement.currency, "value", settlement.currency),
+                settlement.notes,
+                settlement.recorded_at.isoformat(),
+            )
+            for settlement in settlements
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM annual_tax_settlements;")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO annual_tax_settlements (
+                        id, year, funding_group, amount, currency, notes, recorded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+
+    def replace_realized_pnl_records(self, records: Iterable[RealizedPnLRecord]) -> None:
+        rows: Sequence[tuple] = [
+            (
+                record.id,
+                record.sell_transaction_id,
+                record.trade_date.isoformat(),
+                record.symbol,
+                getattr(record.market, "value", record.market),
+                getattr(record.broker_account_type, "value", record.broker_account_type),
+                getattr(record.position_currency, "value", record.position_currency),
+                getattr(record.settlement_currency, "value", record.settlement_currency),
+                float(record.quantity),
+                float(record.matched_quantity),
+                float(record.unmatched_quantity),
+                float(record.proceeds_amount),
+                float(record.cost_basis),
+                float(record.realized_pl),
+                __import__("json").dumps(
+                    [item.model_dump(mode="json") for item in record.allocations],
+                    ensure_ascii=False,
+                ),
+                record.memo,
+            )
+            for record in records
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM realized_pnl_records;")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO realized_pnl_records (
+                        id, sell_transaction_id, trade_date, symbol, market,
+                        broker_account_type, position_currency, settlement_currency,
+                        quantity, matched_quantity, unmatched_quantity,
+                        proceeds_amount, cost_basis, realized_pl,
+                        allocations_json, memo
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows,
                 )
@@ -252,6 +417,32 @@ class SQLiteStorage:
                     rows,
                 )
 
+    def replace_stock_splits(self, records: Iterable[StockSplitRecord]) -> None:
+        rows: Sequence[tuple] = [
+            (
+                record.id,
+                record.symbol,
+                getattr(record.market, "value", record.market),
+                record.effective_date.isoformat(),
+                float(record.ratio_before),
+                float(record.ratio_after),
+                record.notes,
+            )
+            for record in records
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM stock_splits;")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO stock_splits (
+                        id, symbol, market, effective_date,
+                        ratio_before, ratio_after, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+
     def replace_fx_exchanges(self, exchanges: Iterable[FxExchangeRecord]) -> None:
         rows: Sequence[tuple] = [
             (
@@ -262,7 +453,7 @@ class SQLiteStorage:
                 getattr(exchange.to_currency, "value", exchange.to_currency),
                 float(exchange.from_amount),
                 float(exchange.to_amount),
-                float(exchange.rate),
+                float(exchange.rate) if exchange.rate is not None else None,
                 exchange.notes,
             )
             for exchange in exchanges
@@ -306,7 +497,9 @@ class SQLiteStorage:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT id, trade_date, symbol, quantity, gross_amount, funding_group,"
-                " cash_currency, cross_currency, buy_currency, sell_currency, market,"
+                " cash_currency, position_group, settlement_group, trade_currency,"
+                " trade_amount, settlement_currency, settlement_amount, broker_account_type,"
+                " cross_currency, buy_currency, sell_currency, market,"
                 " taxed, memo FROM transactions"
                 " ORDER BY trade_date, id;"
             ).fetchall()
@@ -329,6 +522,33 @@ class SQLiteStorage:
             ).fetchall()
         return [TaxSettlementRecord(**dict(row)) for row in rows]
 
+    def load_annual_tax_settlements(self) -> list[AnnualTaxSettlement]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, year, funding_group, amount, currency, notes, recorded_at"
+                " FROM annual_tax_settlements ORDER BY year DESC, recorded_at DESC, id;"
+            ).fetchall()
+        return [AnnualTaxSettlement(**dict(row)) for row in rows]
+
+    def load_realized_pnl_records(self) -> list[RealizedPnLRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, sell_transaction_id, trade_date, symbol, market,"
+                " broker_account_type, position_currency, settlement_currency,"
+                " quantity, matched_quantity, unmatched_quantity,"
+                " proceeds_amount, cost_basis, realized_pl, allocations_json, memo"
+                " FROM realized_pnl_records ORDER BY trade_date, symbol, sell_transaction_id;"
+            ).fetchall()
+        records: list[RealizedPnLRecord] = []
+        for row in rows:
+            payload = dict(row)
+            payload["allocations"] = [
+                RealizedPnLAllocation(**item)
+                for item in __import__("json").loads(payload.pop("allocations_json") or "[]")
+            ]
+            records.append(RealizedPnLRecord(**payload))
+        return records
+
     def load_capital_adjustments(self) -> list[FundingCapitalAdjustment]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -336,6 +556,14 @@ class SQLiteStorage:
                 " FROM capital_adjustments ORDER BY effective_date, id;"
             ).fetchall()
         return [FundingCapitalAdjustment(**dict(row)) for row in rows]
+
+    def load_stock_splits(self) -> list[StockSplitRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, symbol, market, effective_date, ratio_before, ratio_after, notes"
+                " FROM stock_splits ORDER BY effective_date, symbol, id;"
+            ).fetchall()
+        return [StockSplitRecord(**dict(row)) for row in rows]
 
     def load_fx_exchanges(self) -> list[FxExchangeRecord]:
         with self._connect() as connection:
@@ -365,7 +593,16 @@ class SQLiteStorage:
             cursor = connection.execute("SELECT 1 FROM tax_settlements LIMIT 1;")
             if cursor.fetchone():
                 return True
+            cursor = connection.execute("SELECT 1 FROM annual_tax_settlements LIMIT 1;")
+            if cursor.fetchone():
+                return True
+            cursor = connection.execute("SELECT 1 FROM realized_pnl_records LIMIT 1;")
+            if cursor.fetchone():
+                return True
             cursor = connection.execute("SELECT 1 FROM capital_adjustments LIMIT 1;")
+            if cursor.fetchone():
+                return True
+            cursor = connection.execute("SELECT 1 FROM stock_splits LIMIT 1;")
             if cursor.fetchone():
                 return True
             cursor = connection.execute("SELECT 1 FROM fx_exchanges LIMIT 1;")

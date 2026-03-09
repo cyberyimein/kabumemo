@@ -1,6 +1,7 @@
 export type Market = "JP" | "US";
 export type Currency = "JPY" | "USD";
 export type TaxStatus = "Y" | "N";
+export type BrokerAccountType = "NISA" | "SPECIFIC" | "GENERAL" | "UNKNOWN";
 
 export interface FundingGroup {
   name: string;
@@ -30,6 +31,19 @@ export interface FundingCapitalAdjustment extends FundingCapitalAdjustmentPayloa
   funding_group: string;
 }
 
+export interface StockSplitPayload {
+  symbol: string;
+  market: Market;
+  effective_date: string;
+  ratio_before: number;
+  ratio_after: number;
+  notes?: string | null;
+}
+
+export interface StockSplit extends StockSplitPayload {
+  id: string;
+}
+
 export interface FxExchangeBase {
   exchange_date: string;
   from_currency: Currency;
@@ -56,6 +70,13 @@ export interface TransactionBase {
   gross_amount: number;
   funding_group: string;
   cash_currency: Currency;
+  position_group?: string | null;
+  settlement_group?: string | null;
+  trade_currency?: Currency | null;
+  trade_amount?: number | null;
+  settlement_currency?: Currency | null;
+  settlement_amount?: number | null;
+  broker_account_type?: BrokerAccountType;
   cross_currency: boolean;
   buy_currency?: Currency | null;
   sell_currency?: Currency | null;
@@ -224,6 +245,79 @@ export interface TaxSettlementUpdate {
   funding_group?: string;
   exchange_rate?: number;
   balance_exchange_rate?: number;
+}
+
+export interface AnnualTaxSettlement {
+  id: string;
+  year: number;
+  funding_group: string;
+  amount: number;
+  currency: Currency;
+  notes?: string | null;
+  recorded_at: string;
+}
+
+export interface AnnualTaxSettlementCreate {
+  year: number;
+  funding_group: string;
+  amount: number;
+  currency: Currency;
+  notes?: string | null;
+  recorded_at?: string;
+}
+
+export interface AnnualTaxSettlementUpdate {
+  year?: number;
+  funding_group?: string;
+  amount?: number;
+  currency?: Currency;
+  notes?: string | null;
+  recorded_at?: string;
+}
+
+export interface BrokerImportFile {
+  file_name: string;
+  content_base64: string;
+  encoding_hint?: string | null;
+}
+
+export interface BrokerImportPreviewRequest {
+  domestic_report?: BrokerImportFile | null;
+  us_report?: BrokerImportFile | null;
+  position_group_jpy?: string;
+  settlement_group_jpy?: string;
+  position_group_usd?: string;
+  settlement_group_usd?: string;
+}
+
+export interface BrokerImportPreviewItem {
+  trade_date: string;
+  symbol: string;
+  market: Market;
+  quantity: number;
+  trade_currency: Currency;
+  trade_amount: number;
+  settlement_currency: Currency;
+  settlement_amount: number;
+  broker_account_type: BrokerAccountType;
+  position_group: string;
+  settlement_group: string;
+  source_file: string;
+  source_line: number;
+  transaction_id: string;
+  taxed: TaxStatus;
+  memo?: string | null;
+}
+
+export interface BrokerImportPreviewResponse {
+  items: BrokerImportPreviewItem[];
+  warnings: string[];
+  applied_count: number;
+  skipped_count: number;
+}
+
+export interface BrokerImportApplyRequest extends BrokerImportPreviewRequest {
+  replace_existing_transactions?: boolean;
 }
 
 export interface HealthResponse {

@@ -22,12 +22,32 @@
     "toasts": {
       "dataRefreshed": "データを更新しました",
       "healthUnavailable": "バックエンドのヘルスチェックに接続できません。FastAPI が起動しているか確認してください。"
+    },
+    "overview": {
+      "kicker": "Mobile Portfolio",
+      "title": "スプレッドシートではなく、ネオバンク風の取引ダッシュボードとして見える UI。",
+      "description": "上部カードで現在の取引、保有、換金、税務負荷を素早く把握してから詳細へ入れます。",
+      "chartEyebrow": "資金サマリー",
+      "chartCaption": "現在の通貨別資金集計をもとにした簡易ビジュアライゼーションです。",
+      "chartEmpty": "取引を導入または登録すると、ここに資金概要が表示されます。",
+      "zeroState": "データなし",
+      "cards": {
+        "trades": "取引数",
+        "tradesMeta": "現在の実行データ",
+        "positions": "保有中",
+        "positionsMeta": "残ポジションの銘柄数",
+        "fx": "換金記録",
+        "fxMeta": "独立 FX レコード",
+        "tax": "未精算税務",
+        "taxMeta": "非 NISA 売却"
+      }
     }
   },
   "tabs": {
     "transactions": "取引",
     "positions": "ポジション",
     "funds": "資金",
+    "import": "取込",
     "tax": "納税"
   },
   "common": {
@@ -60,6 +80,7 @@
     },
     "labels": {
       "memo": "メモ",
+      "tags": "タグ",
       "month": "月",
       "year": "年"
     },
@@ -84,9 +105,15 @@
       "symbol": "銘柄コード",
       "quantity": "数量",
       "grossAmount": "総額",
+      "positionGroup": "保有元グループ",
+      "settlementGroup": "受渡グループ",
+      "tradeCurrency": "約定通貨",
+      "tradeAmount": "約定金額",
+      "settlementCurrency": "受渡通貨",
+      "settlementAmount": "受渡金額",
       "fundingGroup": "資金グループ",
       "cashCurrency": "資金通貨",
-      "crossCurrency": "クロス通貨の売却",
+      "crossCurrency": "為替も同時記録",
       "buyCurrency": "買付通貨",
       "sellCurrency": "売却通貨",
       "fxFromAmount": "売却金額",
@@ -97,7 +124,8 @@
     "placeholders": {
       "symbol": "7203.T",
       "memo": "任意",
-      "fundingGroup": "資金グループを選択"
+      "fundingGroup": "資金グループを選択",
+      "settlementGroup": "受渡グループを選択"
     },
     "taxOptions": {
       "Y": "納税済み (Y)",
@@ -127,6 +155,9 @@
     },
     "confirm": {
       "delete": "取引 {symbol}（{date}）を削除しますか？"
+    },
+    "validation": {
+      "settlementCurrencyMismatch": "受渡通貨は、選択した受渡グループの通貨と一致させてください。"
     },
     "roundYield": {
       "enter": "ラウンド収益率",
@@ -256,11 +287,12 @@
       "holdingCost": "保有コスト",
       "current": "現在総額",
       "totalPl": "累計損益",
+      "olderPl": "それ以前の損益",
       "currentYearPl": "当期実現損益",
       "currentYearRatio": "当期利回り",
       "previousYearPl": "前期実現損益",
       "previousYearRatio": "前期利回り",
-      "combinedLabel": "合算 ({currency})"
+      "combinedLabel": "合算後 ({currency})"
     },
     "emptyAggregate": "サマリー表示できるデータがありません",
     "exchangeRate": {
@@ -325,6 +357,35 @@
         "deleted": "為替記録を削除しました"
       }
     },
+    "stockSplits": {
+      "title": "株式分割の記録",
+      "description": "株式分割イベントを記録すると、保有数量、平均取得単価、実現損益を正しく再計算します。",
+      "submit": "株式分割を追加",
+      "fields": {
+        "date": "効力発生日",
+        "symbol": "銘柄コード",
+        "market": "市場",
+        "ratioBefore": "分割前",
+        "ratioAfter": "分割後",
+        "notes": "メモ"
+      },
+      "placeholders": {
+        "symbol": "8001 または NVDA"
+      },
+      "table": {
+        "date": "日付",
+        "symbol": "銘柄",
+        "market": "市場",
+        "ratio": "比率",
+        "notes": "メモ"
+      },
+      "empty": "株式分割の記録がありません。",
+      "confirmDelete": "この株式分割記録を削除しますか？",
+      "toasts": {
+        "created": "株式分割を追加しました",
+        "deleted": "株式分割を削除しました"
+      }
+    },
     "confirm": {
       "mustKeepOne": "少なくとも 1 つの資金グループを残してください。",
       "delete": "資金グループ {name} を削除しますか？"
@@ -339,6 +400,9 @@
   "tax": {
     "title": "納税処理",
     "description": "未納税の売却取引を一覧表示し、納税額を登録すると資金グループと税区分を更新します。",
+    "descriptionAnnual": "納税は年次で純額を記録します。非 NISA の売却は年次精算まで未納税として残します。",
+    "annualTitle": "年次納税記録",
+    "annualHint": "ここでは年次の純納税結果のみを記録します。個別の売却取引には紐づきません。",
     "pendingTitle": "未処理の取引 ({count})",
     "table": {
       "date": "日付",
@@ -375,6 +439,7 @@
       "updated": "納税情報を更新しました",
       "deleted": "納税記録を削除しました"
     },
+    "pendingSummary": "現在 {count} 件の非 NISA 売却が年次納税待ちです。",
     "historyTitle": "登録済み納税 ({count})",
     "historyTable": {
       "recordedAt": "登録日",
@@ -386,6 +451,51 @@
       "fundingGroup": "資金グループ",
       "actions": "操作"
     },
-    "historyEmpty": "納税記録がまだありません。"
+    "historyEmpty": "納税記録がまだありません。",
+    "errors": {
+      "load": "年次納税記録を読み込めませんでした。",
+      "save": "年次納税記録を保存できませんでした。",
+      "delete": "年次納税記録を削除できませんでした。"
+    }
+  },
+  "imports": {
+    "title": "証券レポート取込",
+    "description": "日本株と米国株のレポートをアップロードし、取引を高速一括取込します。重複は自動でスキップされます。",
+    "formTitle": "レポートファイルを選択",
+    "runtimeTarget": "この取込は、realdata バックアップではなく、実行中アプリが参照する data ディレクトリへ直接書き込みます。",
+    "applyHint": "取込を適用すると新規取引を高速追加し、既存の重複データは自動でスキップします。",
+    "previewHint": "プレビューはアップロード済みレポートと現在の資金グループ設定から生成されます。",
+    "fields": {
+      "domestic": "日本株 CSV",
+      "us": "米国株 CSV",
+      "jpyPositionGroup": "JPY 保有元グループ",
+      "jpySettlementGroup": "JPY 受渡グループ",
+      "usdPositionGroup": "USD 保有元グループ",
+      "usdSettlementGroup": "USD 受渡グループ"
+    },
+    "actions": {
+      "preview": "プレビュー",
+      "apply": "高速取込"
+    },
+    "previewTitle": "取込プレビュー ({count})",
+    "previewReady": "{count} 件のプレビューを生成しました。",
+    "applyDone": "{count} 件の取引を取り込み、{skipped} 件の重複をスキップしました。",
+    "table": {
+      "date": "日付",
+      "symbol": "銘柄",
+      "market": "市場",
+      "quantity": "数量",
+      "tradeAmount": "約定金額",
+      "settlementAmount": "受渡金額",
+      "positionGroup": "保有元グループ",
+      "settlementGroup": "受渡グループ",
+      "accountType": "口座区分",
+      "taxed": "納税"
+    },
+    "empty": "まだプレビューがありません。",
+    "errors": {
+      "preview": "プレビューを生成できませんでした。",
+      "apply": "取込を適用できませんでした。"
+    }
   }
 }

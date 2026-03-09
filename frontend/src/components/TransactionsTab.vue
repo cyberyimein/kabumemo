@@ -164,16 +164,7 @@
             />
           </label>
           <label>
-            <span>{{ t("transactions.fields.grossAmount") }}</span>
-            <input
-              v-model.number="form.gross_amount"
-              type="number"
-              step="0.01"
-              required
-            />
-          </label>
-          <label>
-            <span>{{ t("transactions.fields.fundingGroup") }}</span>
+            <span>{{ t("transactions.fields.positionGroup") }}</span>
             <BaseSelect
               v-model="form.funding_group"
               :options="fundingGroupOptions"
@@ -181,46 +172,46 @@
               :empty-label="t('common.states.none')"
             />
           </label>
-          <label v-if="tradeType === 'sell'" class="full">
-            <span>{{ t("transactions.fields.crossCurrency") }}</span>
-            <div class="toggle-group inline-toggle" role="radiogroup">
-              <button
-                type="button"
-                :class="['toggle-pill', { active: form.cross_currency }]"
-                @click="setCrossCurrency(true)"
-              >
-                {{ t("common.toggle.on") }}
-              </button>
-              <button
-                type="button"
-                :class="['toggle-pill', { active: !form.cross_currency }]"
-                @click="setCrossCurrency(false)"
-              >
-                {{ t("common.toggle.off") }}
-              </button>
-            </div>
-          </label>
-          <label v-if="tradeType === 'sell' && form.cross_currency">
-            <span>{{ t("transactions.fields.buyCurrency") }}</span>
+          <label v-if="tradeType === 'sell'">
+            <span>{{ t("transactions.fields.settlementGroup") }}</span>
             <BaseSelect
-              v-model="form.buy_currency"
+              v-model="form.settlement_group"
+              :options="fundingGroupOptions"
+              :placeholder="t('transactions.placeholders.settlementGroup')"
+              :empty-label="t('common.states.none')"
+            />
+          </label>
+          <label v-if="tradeType === 'sell'">
+            <span>{{ t("transactions.fields.tradeCurrency") }}</span>
+            <BaseSelect
+              v-model="form.trade_currency"
               :options="crossCurrencyOptions"
             />
           </label>
-          <label v-if="tradeType === 'sell' && form.cross_currency">
-            <span>{{ t("transactions.fields.sellCurrency") }}</span>
-            <BaseSelect
-              v-model="form.sell_currency"
-              :options="crossCurrencyOptions"
-            />
-          </label>
-          <label v-if="tradeType === 'sell' && form.cross_currency">
-            <span>{{ t("transactions.fields.fxFromAmount") }}</span>
+          <label v-if="tradeType === 'sell'">
+            <span>{{ t("transactions.fields.tradeAmount") }}</span>
             <input
-              v-model.number="form.fx_from_amount"
+              v-model.number="form.trade_amount"
               type="number"
               step="0.01"
               min="0"
+              required
+            />
+          </label>
+          <label v-if="tradeType === 'sell'">
+            <span>{{ t("transactions.fields.settlementCurrency") }}</span>
+            <BaseSelect
+              v-model="form.settlement_currency"
+              :options="crossCurrencyOptions"
+            />
+          </label>
+          <label>
+            <span>{{ tradeType === 'sell' ? t("transactions.fields.settlementAmount") : t("transactions.fields.grossAmount") }}</span>
+            <input
+              v-model.number="form.gross_amount"
+              type="number"
+              step="0.01"
+              required
             />
           </label>
           <label>
@@ -262,28 +253,51 @@
       </div>
 
       <div class="surface">
-        <h3>{{ t("transactions.historyTitle", { count: transactions.length }) }}</h3>
+        <div class="section-toolbar">
+          <h3>{{ t("transactions.historyTitle", { count: transactions.length }) }}</h3>
+          <div class="section-toolbar__actions">
+            <span v-if="activeTransaction && !roundYieldMode" class="selection-pill">
+              {{ activeTransaction.symbol }} · {{ activeTransaction.trade_date }}
+            </span>
+            <button
+              v-if="!roundYieldMode"
+              type="button"
+              class="ghost-button"
+              :disabled="!activeTransaction"
+              @click="editActiveTransaction"
+            >
+              {{ t("common.actions.edit") }}
+            </button>
+            <button
+              v-if="!roundYieldMode"
+              type="button"
+              class="ghost-button danger"
+              :disabled="!activeTransaction"
+              @click="deleteActiveTransaction"
+            >
+              {{ t("common.actions.delete") }}
+            </button>
+          </div>
+        </div>
+        <div v-if="activeTransaction" class="selection-details">
+          <span class="selection-details__label">{{ t("common.labels.memo") }}</span>
+          <p class="selection-details__content">{{ activeTransaction.memo || "-" }}</p>
+        </div>
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
-                <th v-if="roundYieldMode" class="select-column">
-                  {{ t("transactions.roundYield.table.select") }}
-                </th>
+                <th class="select-column">{{ t("common.select") }}</th>
                 <th>{{ t("transactions.table.date") }}</th>
                 <th>{{ t("transactions.table.symbol") }}</th>
                 <th class="numeric">{{ t("transactions.table.quantity") }}</th>
                 <th class="numeric">{{ t("transactions.table.amount") }}</th>
-                <th>{{ t("transactions.table.fundingGroup") }}</th>
-                <th>{{ t("transactions.table.currency") }}</th>
-                <th>{{ t("transactions.table.market") }}</th>
-                <th>{{ t("transactions.table.taxed") }}</th>
-                <th class="actions-column">{{ t("transactions.table.actions") }}</th>
+                <th>{{ t("common.labels.tags") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!transactions.length">
-                <td :colspan="roundYieldMode ? 10 : 9" class="empty">
+                <td colspan="6" class="empty">
                   {{ t("transactions.empty") }}
                 </td>
               </tr>
@@ -293,19 +307,31 @@
                 :class="[
                   'interactive-row',
                   tx.quantity < 0 ? 'is-sell' : 'is-buy',
-                  { 'is-selected': isSelected(tx.id), 'selection-mode': roundYieldMode }
+                  {
+                    'is-selected': roundYieldMode ? isSelected(tx.id) : activeTransactionId === tx.id,
+                    'selection-mode': roundYieldMode,
+                  }
                 ]"
                 tabindex="0"
                 @click="handleRowActivation(tx)"
                 @keydown.enter.prevent="handleRowActivation(tx)"
                 @keydown.space.prevent="handleRowActivation(tx)"
               >
-                <td v-if="roundYieldMode" class="select-column" @click.stop>
+                <td class="select-column" @click.stop>
                   <input
+                    v-if="roundYieldMode"
                     type="checkbox"
                     :checked="isSelected(tx.id)"
                     :aria-label="t('transactions.roundYield.table.selectRow', { symbol: tx.symbol, date: tx.trade_date })"
                     @change="toggleSelection(tx.id)"
+                  />
+                  <input
+                    v-else
+                    type="radio"
+                    name="transaction-select"
+                    :checked="activeTransactionId === tx.id"
+                    :aria-label="t('transactions.roundYield.table.selectRow', { symbol: tx.symbol, date: tx.trade_date })"
+                    @change="selectActiveTransaction(tx.id)"
                   />
                 </td>
                 <td>{{ tx.trade_date }}</td>
@@ -314,26 +340,17 @@
                   {{ formatNumber(tx.quantity) }}
                 </td>
                 <td class="numeric">{{ formatCurrency(tx.gross_amount, tx.cash_currency) }}</td>
-                <td>{{ tx.funding_group }}</td>
-                <td>{{ tx.cash_currency }}</td>
-                <td>{{ marketLabel(tx.market) }}</td>
-                <td>{{ tx.taxed }}</td>
-                <td class="actions-column">
-                  <div class="row-actions">
-                    <button
-                      type="button"
-                      class="ghost-button"
-                      @click.stop="startEditing(tx)"
-                    >
-                      {{ t("common.actions.edit") }}
-                    </button>
-                    <button
-                      type="button"
-                      class="ghost-button danger"
-                      @click.stop="confirmDelete(tx)"
-                    >
-                      {{ t("common.actions.delete") }}
-                    </button>
+                <td>
+                  <div class="inline-tags">
+                    <span class="flat-tag" :class="tx.quantity < 0 ? 'flat-tag--sell' : 'flat-tag--buy'">
+                      {{ tx.quantity < 0 ? t("common.toggle.sell") : t("common.toggle.buy") }}
+                    </span>
+                    <span class="flat-tag">{{ tx.position_group || tx.funding_group }}</span>
+                    <span class="flat-tag" v-if="(tx.settlement_group || tx.funding_group) !== (tx.position_group || tx.funding_group)">
+                      {{ tx.position_group || tx.funding_group }} → {{ tx.settlement_group || tx.funding_group }}
+                    </span>
+                    <span class="flat-tag">{{ tx.settlement_currency || tx.cash_currency }}</span>
+                    <span class="flat-tag">{{ marketLabel(tx.market) }}</span>
                   </div>
                 </td>
               </tr>
@@ -443,7 +460,6 @@ import { useI18n } from "vue-i18n";
 import type {
   Currency,
   FundingGroup,
-  FxExchangeRecord,
   TaxStatus,
   Transaction,
   TransactionCreate,
@@ -459,27 +475,15 @@ import { ApiError, calculateRoundYield } from "@/services/api";
 const props = defineProps<{
   transactions: Transaction[];
   fundingGroups: FundingGroup[];
-  fxExchanges: FxExchangeRecord[];
 }>();
-
-type FxDraft = {
-  exchange_date: string;
-  from_currency: Currency;
-  to_currency: Currency;
-  from_amount: number;
-  to_amount: number;
-  rate: number;
-};
 
 type TransactionCreatePayload = {
   transaction: TransactionCreate;
-  fxDraft?: FxDraft | null;
 };
 
 type UpdateEventPayload = {
   id: string;
   data: TransactionUpdate;
-  fxDraft?: FxDraft | null;
   onDone: (success: boolean) => void;
 };
 
@@ -499,6 +503,7 @@ const { t, locale } = useI18n();
 const pending = ref(false);
 const tradeType = ref<"buy" | "sell">("buy");
 const editingId = ref<string | null>(null);
+const activeTransactionId = ref<string | null>(null);
 const isEditing = computed(() => editingId.value !== null);
 
 const roundYieldMode = ref(false);
@@ -518,21 +523,18 @@ const transactionLookup = computed(() => {
   return map;
 });
 
-const fxLookup = computed(() => {
-  const map = new Map<string, FxExchangeRecord>();
-  for (const fx of props.fxExchanges) {
-    if (fx.transaction_id) {
-      map.set(fx.transaction_id, fx);
-    }
-  }
-  return map;
-});
-
 const selectedTransactions = computed(() =>
   selectedTransactionIds.value
     .map((id) => transactionLookup.value.get(id))
     .filter((item): item is Transaction => Boolean(item))
 );
+
+const activeTransaction = computed(() => {
+  if (!activeTransactionId.value) {
+    return null;
+  }
+  return transactionLookup.value.get(activeTransactionId.value) ?? null;
+});
 
 const selectedBuyCount = computed(() =>
   selectedTransactions.value.filter((tx) => tx.quantity > 0).length
@@ -592,9 +594,10 @@ const primarySelectionIssue = computed(() => selectionIssues.value[0] ?? null);
 type TransactionForm = TransactionCreate & {
   taxed: TaxStatus;
   memo?: string | null;
-  buy_currency: Currency | null;
-  sell_currency: Currency | null;
-  fx_from_amount: number | null;
+  settlement_group: string;
+  trade_currency: Currency;
+  trade_amount: number;
+  settlement_currency: Currency;
 };
 
 const form = reactive<TransactionForm>(resetForm());
@@ -650,6 +653,9 @@ watch(
       return;
     }
     form.taxed = type === "sell" ? "N" : "Y";
+    if (type === "buy") {
+      form.settlement_group = form.funding_group;
+    }
   },
   { immediate: true }
 );
@@ -659,13 +665,14 @@ watch(
   (groupName) => {
     const group = props.fundingGroups.find((item) => item.name === groupName);
     if (group) {
-      if (!form.cross_currency) {
-        form.cash_currency = form.market === "JP" ? "JPY" : group.currency;
-      } else {
-        const defaults = defaultCrossCurrencies(group.currency);
-        form.buy_currency = defaults.buy;
-        form.sell_currency = defaults.sell;
-        form.cash_currency = defaults.buy;
+      if (tradeType.value === "buy" || !form.settlement_group) {
+        form.settlement_group = group.name;
+      }
+      if (tradeType.value === "buy") {
+        const currency = groupCurrency(group.name) ?? group.currency;
+        form.settlement_currency = currency;
+        form.cash_currency = currency;
+        form.trade_currency = form.market === "US" ? "USD" : "JPY";
       }
     }
   }
@@ -674,52 +681,36 @@ watch(
 watch(
   () => form.market,
   (market) => {
-    if (form.cross_currency) {
+    if (market === "JP") {
+      form.trade_currency = "JPY";
+      form.settlement_currency = "JPY";
+      form.cash_currency = "JPY";
       return;
     }
-    if (market === "JP") {
-      form.cash_currency = "JPY";
-    } else {
-      const group = props.fundingGroups.find(
-        (item) => item.name === form.funding_group
-      );
-      form.cash_currency = group?.currency ?? form.cash_currency ?? "USD";
-    }
+    form.trade_currency = "USD";
+    const settlementCurrency = groupCurrency(
+      tradeType.value === "buy" ? form.funding_group : form.settlement_group || form.funding_group
+    );
+    form.settlement_currency = settlementCurrency ?? form.settlement_currency ?? "USD";
+    form.cash_currency = form.settlement_currency;
   },
   { immediate: true }
 );
 
 watch(
-  () => form.cross_currency,
-  (enabled) => {
-    if (!enabled) {
-      form.buy_currency = null;
-      form.sell_currency = null;
-      form.fx_from_amount = null;
-      return;
-    }
+  () => form.settlement_group,
+  (groupName) => {
     if (tradeType.value !== "sell") {
-      form.cross_currency = false;
       return;
     }
-    const group = props.fundingGroups.find((item) => item.name === form.funding_group);
-    const defaults = defaultCrossCurrencies(group?.currency ?? "USD");
-    form.buy_currency = defaults.buy;
-    form.sell_currency = defaults.sell;
-    form.cash_currency = defaults.buy;
-    if (!form.fx_from_amount) {
-      form.fx_from_amount = null;
+    const currency = groupCurrency(groupName);
+    if (!currency) {
+      return;
     }
-  }
-);
-
-watch(
-  () => form.buy_currency,
-  (value) => {
-    if (form.cross_currency && value) {
-      form.cash_currency = value;
-    }
-  }
+    form.settlement_currency = currency;
+    form.cash_currency = currency;
+  },
+  { immediate: true }
 );
 
 watch(
@@ -732,6 +723,9 @@ watch(
     selectedTransactionIds.value = selectedTransactionIds.value.filter((id) =>
       available.has(id)
     );
+    if (activeTransactionId.value && !available.has(activeTransactionId.value)) {
+      activeTransactionId.value = null;
+    }
   }
 );
 
@@ -773,14 +767,15 @@ function resetForm(): TransactionForm {
     quantity: 1,
     gross_amount: 0,
     funding_group: "",
+    settlement_group: "",
     cash_currency: "JPY",
+    trade_currency: "JPY",
+    trade_amount: 0,
+    settlement_currency: "JPY",
     cross_currency: false,
-    buy_currency: null,
-    sell_currency: null,
     market: "JP",
     taxed: "Y",
     memo: "",
-    fx_from_amount: null,
   };
 }
 
@@ -830,7 +825,11 @@ function handleRowActivation(tx: Transaction) {
     toggleSelection(tx.id);
     return;
   }
-  prefillFromTransaction(tx);
+  selectActiveTransaction(tx.id);
+}
+
+function selectActiveTransaction(id: string) {
+  activeTransactionId.value = id;
 }
 
 function resolveErrorMessage(error: unknown): string {
@@ -886,23 +885,16 @@ function populateFormFromTransaction(tx: Transaction) {
   form.trade_date = tx.trade_date;
   form.symbol = tx.symbol;
   form.funding_group = tx.funding_group;
+  form.settlement_group = tx.settlement_group ?? tx.funding_group;
   form.quantity = Math.max(1, Math.floor(Math.abs(Number(tx.quantity))));
   form.gross_amount = Math.abs(Number(tx.gross_amount));
   form.cash_currency = tx.cash_currency;
-  form.cross_currency = tx.cross_currency;
-  form.buy_currency = tx.buy_currency ?? null;
-  form.sell_currency = tx.sell_currency ?? null;
+  form.trade_currency = tx.trade_currency ?? (tx.market === "US" ? "USD" : "JPY");
+  form.trade_amount = Math.abs(Number(tx.trade_amount ?? tx.gross_amount));
+  form.settlement_currency = tx.settlement_currency ?? tx.cash_currency;
+  form.cross_currency = false;
   form.taxed = tx.taxed;
   form.memo = tx.memo ?? "";
-
-  const fx = fxLookup.value.get(tx.id);
-  if (tx.cross_currency && fx) {
-    form.fx_from_amount = Number(fx.from_amount);
-  } else if (tx.cross_currency) {
-    form.fx_from_amount = null;
-  } else {
-    form.fx_from_amount = null;
-  }
 }
 
 function formatNumber(value: number): string {
@@ -965,6 +957,20 @@ function confirmDelete(tx: Transaction) {
   }
 }
 
+function editActiveTransaction() {
+  if (!activeTransaction.value) {
+    return;
+  }
+  startEditing(activeTransaction.value);
+}
+
+function deleteActiveTransaction() {
+  if (!activeTransaction.value) {
+    return;
+  }
+  confirmDelete(activeTransaction.value);
+}
+
 function startEditing(tx: Transaction) {
   if (roundYieldMode.value) {
     exitRoundYieldMode();
@@ -983,15 +989,19 @@ async function handleSubmit() {
   if (!form.trade_date || !form.symbol || !form.funding_group) {
     return;
   }
-  if (tradeType.value === "sell" && form.cross_currency) {
-    if (!form.buy_currency || !form.sell_currency || form.buy_currency === form.sell_currency) {
-      return;
-    }
-    if (form.fx_from_amount !== null && form.fx_from_amount <= 0) {
+  if (tradeType.value === "sell" && !form.settlement_group) {
+    return;
+  }
+  if (tradeType.value === "sell") {
+    const settlementGroupCurrency = groupCurrency(form.settlement_group);
+    if (settlementGroupCurrency && settlementGroupCurrency !== form.settlement_currency) {
       emit("notify", {
         type: "error",
-        message: t("transactions.validation.fxAmountRequired"),
+        message: t("transactions.validation.settlementCurrencyMismatch"),
       });
+      return;
+    }
+    if (Number(form.trade_amount) <= 0 || Number(form.gross_amount) <= 0) {
       return;
     }
   }
@@ -1009,39 +1019,24 @@ async function handleSubmit() {
       quantity: signedQuantity,
       gross_amount: Number(form.gross_amount),
       funding_group: form.funding_group,
-      cash_currency: form.cash_currency,
-      cross_currency: form.cross_currency,
-      buy_currency: form.cross_currency ? form.buy_currency ?? undefined : undefined,
-      sell_currency: form.cross_currency ? form.sell_currency ?? undefined : undefined,
+      cash_currency: tradeType.value === "sell" ? form.settlement_currency : form.cash_currency,
+      position_group: form.funding_group,
+      settlement_group: tradeType.value === "sell" ? form.settlement_group : form.funding_group,
+      trade_currency: tradeType.value === "sell" ? form.trade_currency : undefined,
+      trade_amount: tradeType.value === "sell" ? Number(form.trade_amount) : undefined,
+      settlement_currency: tradeType.value === "sell" ? form.settlement_currency : undefined,
+      settlement_amount: tradeType.value === "sell" ? Number(form.gross_amount) : undefined,
+      cross_currency: false,
       market: form.market,
       taxed: form.taxed,
       memo: normalizedMemo,
     };
-
-    const fxSellAmount = form.fx_from_amount ?? null;
-    const fxDraft: FxDraft | null =
-      form.cross_currency && fxSellAmount && fxSellAmount > 0
-        ? {
-            exchange_date: form.trade_date,
-            from_currency: form.sell_currency as Currency,
-            to_currency: form.buy_currency as Currency,
-            from_amount: Number(fxSellAmount),
-            to_amount: Number(form.gross_amount),
-            rate: computeFxRate(
-              form.sell_currency as Currency,
-              form.buy_currency as Currency,
-              Number(fxSellAmount),
-              Number(form.gross_amount)
-            ),
-          }
-        : null;
 
     if (isEditing.value && editingId.value) {
       await new Promise<void>((resolve) => {
         emit("update", {
           id: editingId.value as string,
           data: updatePayload,
-          fxDraft,
           onDone: (success: boolean) => {
             if (success) {
               resetFormState();
@@ -1058,14 +1053,18 @@ async function handleSubmit() {
         gross_amount: updatePayload.gross_amount,
         funding_group: updatePayload.funding_group,
         cash_currency: updatePayload.cash_currency,
-        cross_currency: updatePayload.cross_currency,
-        buy_currency: updatePayload.buy_currency ?? undefined,
-        sell_currency: updatePayload.sell_currency ?? undefined,
+        position_group: updatePayload.position_group,
+        settlement_group: updatePayload.settlement_group,
+        trade_currency: updatePayload.trade_currency,
+        trade_amount: updatePayload.trade_amount,
+        settlement_currency: updatePayload.settlement_currency,
+        settlement_amount: updatePayload.settlement_amount,
+        cross_currency: false,
         market: updatePayload.market,
         taxed: updatePayload.taxed,
         memo: normalizedMemo ?? undefined,
       };
-      emit("create", { transaction: createPayload, fxDraft });
+      emit("create", { transaction: createPayload });
       setTransactionsPage(1);
       resetFormState();
     }
@@ -1078,33 +1077,11 @@ function setTradeType(type: "buy" | "sell") {
   tradeType.value = type;
 }
 
-function setCrossCurrency(value: boolean) {
-  form.cross_currency = value;
-}
-
-function defaultCrossCurrencies(groupCurrency: Currency) {
-  if (groupCurrency === "USD") {
-    return { buy: "USD" as Currency, sell: "JPY" as Currency };
+function groupCurrency(name: string | null | undefined): Currency | null {
+  if (!name) {
+    return null;
   }
-  return { buy: "JPY" as Currency, sell: "USD" as Currency };
-}
-
-function computeFxRate(
-  fromCurrency: Currency,
-  toCurrency: Currency,
-  fromAmount: number,
-  toAmount: number
-): number {
-  if (!fromAmount || !toAmount) {
-    return 0;
-  }
-  if (fromCurrency === "JPY" && toCurrency === "USD") {
-    return fromAmount / toAmount;
-  }
-  if (fromCurrency === "USD" && toCurrency === "JPY") {
-    return toAmount / fromAmount;
-  }
-  return fromAmount / toAmount;
+  return props.fundingGroups.find((group) => group.name === name)?.currency ?? null;
 }
 
 function setMarket(type: "JP" | "US") {
@@ -1117,7 +1094,7 @@ function setMarket(type: "JP" | "US") {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
+  gap: 1.25rem;
   padding: clamp(1.5rem, 3vw, 2rem);
   border-radius: var(--radius-lg);
   border: 1px solid var(--divider);
@@ -1127,15 +1104,7 @@ function setMarket(type: "JP" | "US") {
 }
 
 .panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.12) 48%, rgba(255, 255, 255, 0.05)),
-    repeating-linear-gradient(90deg, transparent 0 42px, rgba(0, 0, 0, 0.04) 42px 43px);
-  mix-blend-mode: overlay;
-  opacity: 0.45;
+  content: none;
 }
 
 .panel > * {
@@ -1187,9 +1156,9 @@ function setMarket(type: "JP" | "US") {
   justify-content: center;
   min-height: 2.35rem;
   padding: 0.55rem 1.1rem;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-size: 0.85rem;
-  letter-spacing: 0.4px;
+  letter-spacing: 0;
 }
 
 .header-button--primary {
@@ -1230,8 +1199,8 @@ function setMarket(type: "JP" | "US") {
 .surface {
   border-radius: var(--radius-lg);
   border: 1px solid var(--divider);
-  background: linear-gradient(180deg, var(--panel-alt), var(--panel));
-  box-shadow: var(--shadow-soft);
+  background: var(--panel-alt);
+  box-shadow: none;
   padding: clamp(1.25rem, 2.5vw, 1.75rem);
   display: flex;
   flex-direction: column;
@@ -1239,10 +1208,10 @@ function setMarket(type: "JP" | "US") {
 }
 
 .surface h3 {
-  font-size: 0.95rem;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
 }
 
 .editing-hint {
@@ -1438,7 +1407,7 @@ function setMarket(type: "JP" | "US") {
 }
 
 .select-column {
-  width: 3.25rem;
+  width: 3rem;
   text-align: center;
 }
 
@@ -1449,21 +1418,9 @@ function setMarket(type: "JP" | "US") {
   cursor: pointer;
 }
 
-.actions-column {
-  width: 1%;
-  white-space: nowrap;
-  text-align: right;
-}
-
-.row-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
 .ghost-button {
   border: 1px solid var(--divider);
-  background: transparent;
+  background: #fff;
   color: var(--text-dim);
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-md);
@@ -1473,9 +1430,9 @@ function setMarket(type: "JP" | "US") {
 }
 
 .ghost-button:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: rgba(15, 167, 201, 0.45);
-  background: rgba(15, 167, 201, 0.08);
+  color: var(--accent-strong);
+  border-color: rgba(30, 156, 90, 0.24);
+  background: var(--panel-soft);
 }
 
 .ghost-button.danger {
@@ -1493,11 +1450,11 @@ function setMarket(type: "JP" | "US") {
 }
 
 .table-scroll thead {
-  background: linear-gradient(180deg, rgba(11, 61, 145, 0.08), rgba(11, 61, 145, 0));
-  color: var(--accent);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
+  background: var(--panel-soft);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .table-scroll th,
@@ -1516,34 +1473,12 @@ function setMarket(type: "JP" | "US") {
 }
 
 .table-scroll tbody tr:hover {
-  background: rgba(141, 164, 255, 0.08);
+  background: rgba(30, 156, 90, 0.04);
 }
 
 .interactive-row {
   cursor: pointer;
-  transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
-}
-
-.interactive-row.is-buy {
-  background: linear-gradient(90deg, rgba(15, 167, 201, 0.08), transparent 65%);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-cyan) 18%, transparent),
-    transparent 65%
-  );
-  box-shadow: inset 0.35rem 0 0 rgba(15, 167, 201, 0.35);
-  box-shadow: inset 0.35rem 0 0 color-mix(in srgb, var(--accent-cyan) 55%, transparent);
-}
-
-.interactive-row.is-sell {
-  background: linear-gradient(90deg, rgba(225, 57, 45, 0.08), transparent 65%);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-red) 20%, transparent),
-    transparent 65%
-  );
-  box-shadow: inset 0.35rem 0 0 rgba(225, 57, 45, 0.35);
-  box-shadow: inset 0.35rem 0 0 color-mix(in srgb, var(--accent-red) 55%, transparent);
+  transition: background var(--transition), box-shadow var(--transition);
 }
 
 .interactive-row.selection-mode {
@@ -1551,12 +1486,27 @@ function setMarket(type: "JP" | "US") {
 }
 
 .interactive-row.is-selected {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent-warm) 55%, transparent);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-warm) 32%, transparent),
-    transparent 65%
-  ) !important;
+  box-shadow: inset 0 0 0 1px rgba(30, 156, 90, 0.28);
+  background: rgba(30, 156, 90, 0.06) !important;
+}
+
+.selection-details {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--divider);
+  background: #fff;
+}
+
+.selection-details__label {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.selection-details__content {
+  color: var(--text-dim);
+  line-height: 1.5;
 }
 
 .interactive-row.is-buy:hover {

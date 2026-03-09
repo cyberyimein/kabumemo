@@ -258,6 +258,325 @@ def test_transaction_lifecycle(client: TestClient, monkeypatch):
     assert delete_again.status_code == 404
 
 
+def test_realized_pnl_is_generated_and_updated(client: TestClient):
+    buy_payload = {
+        "trade_date": "2025-09-01",
+        "symbol": "7203.T",
+        "quantity": 10,
+        "gross_amount": 150000,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+    }
+    sell_payload = {
+        "trade_date": "2025-09-15",
+        "symbol": "7203.T",
+        "quantity": -4,
+        "gross_amount": 80000,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+    }
+
+    assert client.post("/api/transactions", json=buy_payload).status_code == 201
+    sell_resp = client.post("/api/transactions", json=sell_payload)
+    assert sell_resp.status_code == 201, sell_resp.text
+    sell_id = sell_resp.json()["id"]
+
+    realized_resp = client.get("/api/realized-pnl")
+    assert realized_resp.status_code == 200, realized_resp.text
+    realized_records = realized_resp.json()
+    assert len(realized_records) == 1
+    assert realized_records[0]["sell_transaction_id"] == sell_id
+    assert realized_records[0]["realized_pl"] == pytest.approx(20000)
+    assert realized_records[0]["cost_basis"] == pytest.approx(60000)
+    assert realized_records[0]["proceeds_amount"] == pytest.approx(80000)
+    assert realized_records[0]["allocations"][0]["funding_group"] == "JPY"
+
+    update_payload = {
+        **sell_payload,
+        "quantity": -5,
+        "gross_amount": 90000,
+        "taxed": "N",
+    }
+    update_resp = client.put(f"/api/transactions/{sell_id}", json=update_payload)
+    assert update_resp.status_code == 200, update_resp.text
+
+    updated_realized = client.get("/api/realized-pnl").json()
+    assert len(updated_realized) == 1
+    assert updated_realized[0]["sell_transaction_id"] == sell_id
+    assert updated_realized[0]["realized_pl"] == pytest.approx(15000)
+    assert updated_realized[0]["cost_basis"] == pytest.approx(75000)
+    assert updated_realized[0]["proceeds_amount"] == pytest.approx(90000)
+
+
+def test_transaction_supports_distinct_position_and_settlement_groups(client: TestClient):
+    buy_payload = {
+        "trade_date": "2024-07-18",
+        "symbol": "NVDA",
+        "quantity": 1,
+        "gross_amount": 18000,
+        "funding_group": "JPY",
+        "position_group": "JPY",
+        "settlement_group": "JPY",
+        "cash_currency": "JPY",
+        "trade_currency": "USD",
+        "trade_amount": 119.30,
+        "settlement_currency": "JPY",
+        "settlement_amount": 18000,
+        "market": "US",
+        "broker_account_type": "SPECIFIC",
+    }
+    sell_payload = {
+        "trade_date": "2024-07-18",
+        "symbol": "NVDA",
+        "quantity": -1,
+        "gross_amount": 118.14,
+        "funding_group": "JPY",
+        "position_group": "JPY",
+        "settlement_group": "USD",
+        "cash_currency": "USD",
+        "trade_currency": "USD",
+        "trade_amount": 118.72,
+        "settlement_currency": "USD",
+        "settlement_amount": 118.14,
+        "market": "US",
+        "broker_account_type": "SPECIFIC",
+        "taxed": "N",
+    }
+
+    assert client.post("/api/transactions", json=buy_payload).status_code == 201
+    sell_resp = client.post("/api/transactions", json=sell_payload)
+    assert sell_resp.status_code == 201, sell_resp.text
+
+    created = sell_resp.json()
+    assert created["position_group"] == "JPY"
+    assert created["settlement_group"] == "USD"
+    assert created["cash_currency"] == "USD"
+    assert created["trade_currency"] == "USD"
+    assert created["trade_amount"] == pytest.approx(118.72)
+    assert created["settlement_currency"] == "USD"
+    assert created["settlement_amount"] == pytest.approx(118.14)
+
+
+def test_broker_import_rebuilds_realized_pnl(client: TestClient):
+    import base64
+
+    domestic_csv = """
+約定履歴照会
+
+約定日,銘柄,銘柄コード,市場,取引,期限,預り,課税,約定数量,約定単価,手数料/諸経費等,税額,受渡日,受渡金額/決済損益
+2025/07/15,ＮＴＴ,9432,東証,株式現物買,--, 特定 ,--,500,150.2,--,--,2025/07/17,75100
+2025/07/24,ＮＴＴ,9432,東証,株式現物売,--, 特定 ,申告,500,152.7,--,--,2025/07/28,76350
+""".strip()
+    us_csv = """
+約定履歴
+
+国内約定日,銘柄,銘柄コード,市場,商品区分,注文種別,取引,預り区分,約定数量,約定単価,国内受渡日,受渡金額/決済損益
+2025/08/28,シャオペン ADR,XPEV,NYSE,米国株式,指値,現買,NISA,10,22.6550USD,2025/09/01,226.55USD
+""".strip()
+
+    payload = {
+        "domestic_report": {
+            "file_name": "domestic.csv",
+            "content_base64": base64.b64encode(domestic_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+        "us_report": {
+            "file_name": "us.csv",
+            "content_base64": base64.b64encode(us_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+        "replace_existing_transactions": True,
+    }
+
+    apply_resp = client.post("/api/imports/broker/apply", json=payload)
+    assert apply_resp.status_code == 200, apply_resp.text
+    assert apply_resp.json()["applied_count"] == 3
+
+    realized_resp = client.get("/api/realized-pnl")
+    assert realized_resp.status_code == 200, realized_resp.text
+    realized_records = realized_resp.json()
+    assert len(realized_records) == 1
+    assert realized_records[0]["symbol"] == "9432.T"
+    assert realized_records[0]["realized_pl"] == pytest.approx(1250)
+
+
+def test_broker_import_preview_respects_distinct_group_mapping(client: TestClient):
+    import base64
+
+    us_csv = """
+約定履歴
+
+国内約定日,銘柄,銘柄コード,市場,商品区分,注文種別,取引,預り区分,約定数量,約定単価,国内受渡日,受渡金額/決済損益
+2024/07/18,エヌビディア,NVDA,NASDAQ,米国株式,指値,現売,特定,1,118.7200USD,2024/07/22,118.14USD
+""".strip()
+
+    payload = {
+        "us_report": {
+            "file_name": "us.csv",
+            "content_base64": base64.b64encode(us_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+        "position_group_usd": "JPY",
+        "settlement_group_usd": "USD",
+    }
+
+    preview_resp = client.post("/api/imports/broker/preview", json=payload)
+    assert preview_resp.status_code == 200, preview_resp.text
+    items = preview_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["position_group"] == "JPY"
+    assert items[0]["settlement_group"] == "USD"
+    assert items[0]["settlement_currency"] == "USD"
+    assert items[0]["trade_currency"] == "USD"
+
+
+def test_broker_import_same_day_buy_is_sorted_before_sell(client: TestClient):
+    import base64
+
+    us_csv = """
+約定履歴
+
+国内約定日,銘柄,銘柄コード,市場,商品区分,注文種別,取引,預り区分,約定数量,約定単価,国内受渡日,受渡金額/決済損益
+2024/07/18,エヌビディア,NVDA,NASDAQ,米国株式,指値,現売,特定,1,118.7200USD,2024/07/22,118.14USD
+2024/07/18,エヌビディア,NVDA,NASDAQ,米国株式,指値,現買,特定,1,118.7200USD,2024/07/22,119.30USD
+""".strip()
+
+    payload = {
+        "us_report": {
+            "file_name": "us.csv",
+            "content_base64": base64.b64encode(us_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+        "replace_existing_transactions": True,
+    }
+
+    apply_resp = client.post("/api/imports/broker/apply", json=payload)
+    assert apply_resp.status_code == 200, apply_resp.text
+
+    transactions = client.get("/api/transactions").json()
+    assert len(transactions) == 2
+    assert transactions[0]["quantity"] == 1
+    assert transactions[1]["quantity"] == -1
+
+    realized_records = client.get("/api/realized-pnl").json()
+    assert len(realized_records) == 1
+    assert realized_records[0]["matched_quantity"] == pytest.approx(1)
+    assert realized_records[0]["unmatched_quantity"] == pytest.approx(0)
+
+
+def test_stock_split_endpoint_rebuilds_positions_and_realized_pnl(client: TestClient):
+    buy_payload = {
+        "trade_date": "2025-12-22",
+        "symbol": "8001",
+        "quantity": 20,
+        "gross_amount": 188320,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+        "broker_account_type": "SPECIFIC",
+    }
+    assert client.post("/api/transactions", json=buy_payload).status_code == 201
+
+    split_payload = {
+        "symbol": "8001",
+        "market": "JP",
+        "effective_date": "2025-12-31",
+        "ratio_before": 1,
+        "ratio_after": 5,
+        "notes": "1 for 5 split",
+    }
+    split_resp = client.post("/api/stock-splits", json=split_payload)
+    assert split_resp.status_code == 201, split_resp.text
+
+    sell_payload = {
+        "trade_date": "2026-01-13",
+        "symbol": "8001",
+        "quantity": -100,
+        "gross_amount": 204750,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+        "broker_account_type": "SPECIFIC",
+    }
+    sell_resp = client.post("/api/transactions", json=sell_payload)
+    assert sell_resp.status_code == 201, sell_resp.text
+
+    positions_resp = client.get("/api/positions")
+    assert positions_resp.status_code == 200, positions_resp.text
+    position = positions_resp.json()[0]
+    assert position["symbol"] == "8001.T"
+    assert position["breakdown"][0]["quantity"] == 0
+    assert position["breakdown"][0]["realized_pl"] == pytest.approx(16430)
+
+    realized_resp = client.get("/api/realized-pnl")
+    assert realized_resp.status_code == 200, realized_resp.text
+    realized_record = realized_resp.json()[0]
+    assert realized_record["matched_quantity"] == pytest.approx(100)
+    assert realized_record["unmatched_quantity"] == pytest.approx(0)
+    assert realized_record["cost_basis"] == pytest.approx(188320)
+    assert realized_record["realized_pl"] == pytest.approx(16430)
+
+
+def test_realized_pnl_rebuild_applies_stock_split_before_sell():
+    from datetime import date
+
+    from app.models.schemas import (  # type: ignore
+        BrokerAccountType,
+        Currency,
+        Market,
+        StockSplitRecord,
+        TaxStatus,
+        Transaction,
+    )
+    from app.services.realized_pnl import rebuild_realized_pnl_records  # type: ignore
+
+    buy = Transaction(
+        id="nvda-buy",
+        trade_date=date(2024, 6, 6),
+        symbol="NVDA",
+        quantity=1,
+        gross_amount=120,
+        funding_group="USD",
+        cash_currency=Currency.USD,
+        broker_account_type=BrokerAccountType.NISA,
+        market=Market.US,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    sell = Transaction(
+        id="nvda-sell",
+        trade_date=date(2024, 7, 18),
+        symbol="NVDA",
+        quantity=-10,
+        gross_amount=1180,
+        funding_group="USD",
+        cash_currency=Currency.USD,
+        broker_account_type=BrokerAccountType.NISA,
+        market=Market.US,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+    split = StockSplitRecord(
+        id="nvda-split",
+        symbol="NVDA",
+        market=Market.US,
+        effective_date=date(2024, 6, 10),
+        ratio_before=1,
+        ratio_after=10,
+        notes=None,
+    )
+
+    records = rebuild_realized_pnl_records([buy, sell], stock_splits=[split])
+
+    assert len(records) == 1
+    assert records[0].matched_quantity == pytest.approx(10)
+    assert records[0].unmatched_quantity == pytest.approx(0)
+    assert records[0].cost_basis == pytest.approx(120)
+    assert records[0].realized_pl == pytest.approx(1060)
+
+
 def test_capital_additions_respected(client: TestClient, monkeypatch):
     from datetime import date as real_date
 
@@ -443,6 +762,311 @@ def test_positions_split_by_currency():
     assert jpy_group_entry.average_cost == 100
     assert jpy_group_entry.realized_pl == 0
 
+
+def test_positions_sell_consumes_across_funding_groups():
+    from datetime import date
+
+    from app.models.schemas import Currency, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_positions
+
+    usd_buy = Transaction(
+        id="ptir-usd-buy",
+        trade_date=date(2025, 11, 13),
+        symbol="PTIR",
+        quantity=60,
+        gross_amount=1839.66,
+        funding_group="USD",
+        cash_currency=Currency.USD,
+        position_group="USD",
+        settlement_group="USD",
+        trade_currency=Currency.USD,
+        trade_amount=1830.6,
+        settlement_currency=Currency.USD,
+        settlement_amount=1839.66,
+        market=Market.US,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    jpy_buy = Transaction(
+        id="ptir-jpy-buy",
+        trade_date=date(2025, 11, 14),
+        symbol="PTIR",
+        quantity=140,
+        gross_amount=590852,
+        funding_group="JPY",
+        cash_currency=Currency.JPY,
+        position_group="JPY",
+        settlement_group="JPY",
+        trade_currency=Currency.USD,
+        trade_amount=3795.4,
+        settlement_currency=Currency.JPY,
+        settlement_amount=590852,
+        market=Market.US,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    sell = Transaction(
+        id="ptir-sell",
+        trade_date=date(2025, 12, 11),
+        symbol="PTIR",
+        quantity=-200,
+        gross_amount=6262,
+        funding_group="USD",
+        cash_currency=Currency.USD,
+        position_group="USD",
+        settlement_group="USD",
+        trade_currency=Currency.USD,
+        trade_amount=6284,
+        settlement_currency=Currency.USD,
+        settlement_amount=6262,
+        market=Market.US,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+
+    positions = compute_positions([usd_buy, jpy_buy, sell])
+
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "PTIR"
+    assert len(position.breakdown) == 1
+    assert position.breakdown[0].currency == Currency.USD
+    assert position.breakdown[0].quantity == 0
+    assert all(entry.quantity == 0 for entry in position.group_breakdown)
+
+
+def test_positions_sell_keeps_accounts_separate():
+    from datetime import date
+
+    from app.models.schemas import BrokerAccountType, Currency, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_positions
+
+    nisa_buy = Transaction(
+        id="nisa-buy",
+        trade_date=date(2025, 1, 10),
+        symbol="TEST",
+        quantity=100,
+        gross_amount=10000,
+        funding_group="JPY",
+        cash_currency=Currency.JPY,
+        broker_account_type=BrokerAccountType.NISA,
+        market=Market.JP,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    specific_buy = Transaction(
+        id="specific-buy",
+        trade_date=date(2025, 1, 11),
+        symbol="TEST",
+        quantity=100,
+        gross_amount=20000,
+        funding_group="JPY",
+        cash_currency=Currency.JPY,
+        broker_account_type=BrokerAccountType.SPECIFIC,
+        market=Market.JP,
+        taxed=TaxStatus.YES,
+        memo=None,
+    )
+    specific_sell = Transaction(
+        id="specific-sell",
+        trade_date=date(2025, 1, 12),
+        symbol="TEST",
+        quantity=-100,
+        gross_amount=25000,
+        funding_group="JPY",
+        cash_currency=Currency.JPY,
+        broker_account_type=BrokerAccountType.SPECIFIC,
+        market=Market.JP,
+        taxed=TaxStatus.NO,
+        memo=None,
+    )
+
+    positions = compute_positions([nisa_buy, specific_buy, specific_sell])
+
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "TEST.T"
+    assert len(position.breakdown) == 1
+    assert position.breakdown[0].quantity == 100
+    assert position.breakdown[0].average_cost == 100
+    assert position.breakdown[0].realized_pl == 5000
+
+    group_entry = next(item for item in position.group_breakdown if item.funding_group == "JPY")
+    assert group_entry.quantity == 100
+    assert group_entry.average_cost == 100
+    assert group_entry.realized_pl == 5000
+
+
+def test_fund_snapshot_sell_consumes_across_funding_groups():
+    from datetime import date
+
+    from app.models.schemas import Currency, FundingGroup, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_fund_snapshots
+
+    groups = [
+        FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=0),
+        FundingGroup(name="USD", currency=Currency.USD, initial_amount=0),
+    ]
+    transactions = [
+        Transaction(
+            id="ptir-usd-buy",
+            trade_date=date(2025, 11, 13),
+            symbol="PTIR",
+            quantity=60,
+            gross_amount=1839.66,
+            funding_group="USD",
+            cash_currency=Currency.USD,
+            position_group="USD",
+            settlement_group="USD",
+            trade_currency=Currency.USD,
+            trade_amount=1830.6,
+            settlement_currency=Currency.USD,
+            settlement_amount=1839.66,
+            market=Market.US,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="ptir-jpy-buy",
+            trade_date=date(2025, 11, 14),
+            symbol="PTIR",
+            quantity=140,
+            gross_amount=590852,
+            funding_group="JPY",
+            cash_currency=Currency.JPY,
+            position_group="JPY",
+            settlement_group="JPY",
+            trade_currency=Currency.USD,
+            trade_amount=3795.4,
+            settlement_currency=Currency.JPY,
+            settlement_amount=590852,
+            market=Market.US,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="ptir-sell",
+            trade_date=date(2025, 12, 11),
+            symbol="PTIR",
+            quantity=-200,
+            gross_amount=6262,
+            funding_group="USD",
+            cash_currency=Currency.USD,
+            position_group="USD",
+            settlement_group="USD",
+            trade_currency=Currency.USD,
+            trade_amount=6284,
+            settlement_currency=Currency.USD,
+            settlement_amount=6262,
+            market=Market.US,
+            taxed=TaxStatus.NO,
+            memo=None,
+        ),
+    ]
+
+    snapshots = compute_fund_snapshots(transactions, groups).funds
+    jpy_snapshot = next(item for item in snapshots if item.name == "JPY")
+    usd_snapshot = next(item for item in snapshots if item.name == "USD")
+
+    assert jpy_snapshot.holding_cost == 0
+    assert usd_snapshot.holding_cost == 0
+
+
+def test_fund_snapshot_sell_keeps_accounts_separate():
+    from datetime import date
+
+    from app.models.schemas import BrokerAccountType, Currency, FundingGroup, Market, TaxStatus, Transaction
+    from app.services.analytics import compute_fund_snapshots
+
+    groups = [FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=0)]
+    transactions = [
+        Transaction(
+            id="nisa-buy",
+            trade_date=date(2025, 1, 10),
+            symbol="TEST",
+            quantity=100,
+            gross_amount=10000,
+            funding_group="JPY",
+            cash_currency=Currency.JPY,
+            broker_account_type=BrokerAccountType.NISA,
+            market=Market.JP,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="specific-buy",
+            trade_date=date(2025, 1, 11),
+            symbol="TEST",
+            quantity=100,
+            gross_amount=20000,
+            funding_group="JPY",
+            cash_currency=Currency.JPY,
+            broker_account_type=BrokerAccountType.SPECIFIC,
+            market=Market.JP,
+            taxed=TaxStatus.YES,
+            memo=None,
+        ),
+        Transaction(
+            id="specific-sell",
+            trade_date=date(2025, 1, 12),
+            symbol="TEST",
+            quantity=-100,
+            gross_amount=25000,
+            funding_group="JPY",
+            cash_currency=Currency.JPY,
+            broker_account_type=BrokerAccountType.SPECIFIC,
+            market=Market.JP,
+            taxed=TaxStatus.NO,
+            memo=None,
+        ),
+    ]
+
+    snapshot = compute_fund_snapshots(transactions, groups).funds[0]
+    assert snapshot.cash_balance == -5000
+    assert snapshot.holding_cost == 10000
+    assert snapshot.current_total == 5000
+    assert snapshot.total_pl == 5000
+
+
+def test_fund_snapshot_includes_standalone_fx_exchange():
+    from datetime import date
+
+    from app.models.schemas import Currency, FundingGroup, FxExchangeRecord
+    from app.services.analytics import compute_fund_snapshots
+
+    groups = [
+        FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=100000),
+        FundingGroup(name="USD", currency=Currency.USD, initial_amount=0),
+    ]
+    fx_exchanges = [
+        FxExchangeRecord(
+            id="fx-1",
+            exchange_date=date(2025, 12, 1),
+            from_currency=Currency.JPY,
+            to_currency=Currency.USD,
+            from_amount=15000,
+            to_amount=100,
+            rate=150,
+            notes=None,
+            transaction_id=None,
+        )
+    ]
+
+    snapshots = compute_fund_snapshots([], groups, fx_exchanges=fx_exchanges).funds
+    jpy_snapshot = next(item for item in snapshots if item.name == "JPY")
+    usd_snapshot = next(item for item in snapshots if item.name == "USD")
+
+    assert jpy_snapshot.cash_balance == 85000
+    assert usd_snapshot.cash_balance == 100
+    assert jpy_snapshot.current_total == 85000
+    assert usd_snapshot.current_total == 100
+    assert jpy_snapshot.total_pl == -15000
+    assert usd_snapshot.total_pl == 100
+    assert jpy_snapshot.current_year_pl == 0
+    assert usd_snapshot.current_year_pl == 0
+    assert jpy_snapshot.previous_year_pl == -15000
+    assert usd_snapshot.previous_year_pl == 100
+
 def test_fund_snapshot_respects_transaction_order():
     from datetime import date
 
@@ -552,6 +1176,150 @@ def test_fund_snapshot_yearly_ratios():
     expected_current_ratio = 50 / 1050
     assert snapshot.current_year_pl == pytest.approx(50)
     assert snapshot.current_year_pl_ratio == pytest.approx(expected_current_ratio)
+
+
+def test_fund_snapshot_annual_tax_uses_tax_year(monkeypatch):
+    from datetime import date as real_date
+
+    import app.services.analytics as analytics
+    from app.models.schemas import AnnualTaxSettlement, Currency, FundingGroup
+    from app.services.analytics import compute_fund_snapshots
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):  # type: ignore[override]
+            return cls(2026, 3, 9)
+
+    monkeypatch.setattr(analytics, "date", FixedDate)
+
+    group = FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=1000)
+    annual_settlements = [
+        AnnualTaxSettlement(
+            id="annual-2025",
+            year=2025,
+            funding_group="JPY",
+            amount=100,
+            currency=Currency.JPY,
+            notes=None,
+            recorded_at=FixedDate(2026, 3, 9),
+        )
+    ]
+
+    snapshot = compute_fund_snapshots(
+        [],
+        [group],
+        annual_tax_settlements=annual_settlements,
+    ).funds[0]
+
+    assert snapshot.total_pl == pytest.approx(-100)
+    assert snapshot.current_year_pl == pytest.approx(0)
+    assert snapshot.previous_year_pl == pytest.approx(-100)
+
+
+def test_fund_snapshot_prefers_realized_pnl_ledger_for_yearly_pl(monkeypatch):
+    from datetime import date as real_date
+
+    import app.services.analytics as analytics
+    from app.models.schemas import (
+        AnnualTaxSettlement,
+        BrokerAccountType,
+        Currency,
+        FundingGroup,
+        Market,
+        RealizedPnLAllocation,
+        RealizedPnLRecord,
+    )
+    from app.services.analytics import compute_fund_snapshots
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):  # type: ignore[override]
+            return cls(2026, 3, 9)
+
+    monkeypatch.setattr(analytics, "date", FixedDate)
+
+    groups = [
+        FundingGroup(name="JPY", currency=Currency.JPY, initial_amount=1000),
+        FundingGroup(name="USD", currency=Currency.USD, initial_amount=1000),
+    ]
+    realized_records = [
+        RealizedPnLRecord(
+            id="r-jpy-current",
+            sell_transaction_id="sell-jpy-current",
+            trade_date=FixedDate(2026, 1, 13),
+            symbol="8001.T",
+            market=Market.JP,
+            broker_account_type=BrokerAccountType.SPECIFIC,
+            position_currency=Currency.JPY,
+            settlement_currency=Currency.JPY,
+            quantity=100,
+            matched_quantity=100,
+            unmatched_quantity=0,
+            proceeds_amount=204750,
+            cost_basis=188320,
+            realized_pl=16430,
+            allocations=[
+                RealizedPnLAllocation(
+                    funding_group="JPY",
+                    quantity=100,
+                    cost_basis=188320,
+                    realized_pl=16430,
+                )
+            ],
+            memo=None,
+        ),
+        RealizedPnLRecord(
+            id="r-usd-previous",
+            sell_transaction_id="sell-usd-previous",
+            trade_date=FixedDate(2025, 8, 14),
+            symbol="AMD",
+            market=Market.US,
+            broker_account_type=BrokerAccountType.SPECIFIC,
+            position_currency=Currency.USD,
+            settlement_currency=Currency.USD,
+            quantity=7,
+            matched_quantity=7,
+            unmatched_quantity=0,
+            proceeds_amount=1266.1,
+            cost_basis=1000,
+            realized_pl=266.1,
+            allocations=[
+                RealizedPnLAllocation(
+                    funding_group="USD",
+                    quantity=7,
+                    cost_basis=1000,
+                    realized_pl=266.1,
+                )
+            ],
+            memo=None,
+        ),
+    ]
+    annual_settlements = [
+        AnnualTaxSettlement(
+            id="annual-2025",
+            year=2025,
+            funding_group="USD",
+            amount=66.1,
+            currency=Currency.JPY,
+            notes=None,
+            recorded_at=FixedDate(2026, 3, 9),
+        )
+    ]
+
+    snapshots = compute_fund_snapshots(
+        [],
+        groups,
+        annual_tax_settlements=annual_settlements,
+        realized_pnl_records=realized_records,
+    ).funds
+
+    jpy_snapshot = next(item for item in snapshots if item.name == "JPY")
+    usd_snapshot = next(item for item in snapshots if item.name == "USD")
+
+    assert jpy_snapshot.current_year_pl == pytest.approx(16430)
+    assert jpy_snapshot.previous_year_pl == pytest.approx(0)
+    assert usd_snapshot.current_year_pl == pytest.approx(0)
+    assert usd_snapshot.previous_year_pl == pytest.approx(200)
 
 
 def test_tax_settlement_update_and_delete(client: TestClient):

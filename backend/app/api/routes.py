@@ -5,6 +5,13 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..models.schemas import (
+    AnnualTaxSettlement,
+    AnnualTaxSettlementCreate,
+    AnnualTaxSettlementUpdate,
+    BrokerImportApplyRequest,
+    BrokerImportPreviewRequest,
+    BrokerImportPreviewResponse,
+    Currency,
     FundSnapshots,
     FundingCapitalAdjustment,
     FundingCapitalAdjustmentBase,
@@ -18,8 +25,12 @@ from ..models.schemas import (
     HealthResponse,
     Position,
     PositionHistoryResponse,
+    RealizedPnLRecord,
     RoundTripYieldRequest,
     RoundTripYieldResponse,
+    StockSplitBase,
+    StockSplitCreate,
+    StockSplitRecord,
     TaxSettlementRecord,
     TaxSettlementRequest,
     TaxSettlementUpdate,
@@ -29,6 +40,7 @@ from ..models.schemas import (
     TransactionUpdate,
 )
 from ..services.analytics import (
+    _position_currency_for_transaction as analytics_position_currency_for_transaction,
     compute_fund_snapshots,
     compute_positions,
     compute_round_trip_yield,
@@ -37,12 +49,45 @@ from ..services.analytics import (
     update_tax_settlement,
 )
 from ..services.history import get_position_history
+from ..services.broker_import import apply_broker_import, preview_broker_import, preview_items_to_transactions
+from ..services.realized_pnl import rebuild_and_persist_realized_pnl
+from ..services.stock_splits import adjusted_quantity_for_date
 from ..storage.repository import LocalDataRepository
 from ..services.quotes import refresh_quotes_if_needed
 
 router = APIRouter(prefix="/api", tags=["kabucount"])
 repository = LocalDataRepository()
 repository.ensure_default_groups()
+
+
+def _position_currency_for_trade(payload: Transaction | TransactionCreate | TransactionUpdate) -> Currency:
+    market_currency = Currency.USD if payload.market == Market.US else Currency.JPY
+    if (
+        not payload.cross_currency
+        and payload.trade_amount == payload.gross_amount
+        and payload.settlement_currency == payload.cash_currency
+        and payload.cash_currency != market_currency
+    ):
+        return payload.cash_currency
+    return payload.trade_currency or (
+        payload.buy_currency if payload.cross_currency and payload.buy_currency else payload.cash_currency
+    )
+
+
+def _available_sell_quantity(
+    transactions: list[Transaction],
+    stock_splits: list[StockSplitRecord],
+    payload: Transaction | TransactionCreate | TransactionUpdate,
+) -> float:
+    target_currency = _position_currency_for_trade(payload)
+    return sum(
+        adjusted_quantity_for_date(tx, stock_splits, payload.trade_date)
+        for tx in transactions
+        if tx.symbol == payload.symbol
+        and tx.market == payload.market
+        and analytics_position_currency_for_transaction(tx) == target_currency
+        and tx.broker_account_type == payload.broker_account_type
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -69,19 +114,16 @@ def create_transaction(payload: TransactionCreate) -> Transaction:
             detail="Funding group not found",
         )
     if payload.quantity < 0:
-        available_quantity = sum(
-            tx.quantity
-            for tx in transactions
-            if tx.symbol == payload.symbol
-            and tx.market == payload.market
-            and tx.cash_currency == payload.cash_currency
-        )
+        stock_splits = repository.list_stock_splits()
+        available_quantity = _available_sell_quantity(transactions, stock_splits, payload)
         if available_quantity + payload.quantity < -1e-9:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Insufficient position to complete sell order",
             )
-    return repository.add_transaction(payload)
+    transaction = repository.add_transaction(payload)
+    rebuild_and_persist_realized_pnl(repository)
+    return transaction
 
 
 @router.post(
@@ -131,13 +173,8 @@ def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Trans
     transactions = repository.list_transactions()
     filtered_transactions = [tx for tx in transactions if tx.id != transaction_id]
     if payload.quantity < 0:
-        available_quantity = sum(
-            tx.quantity
-            for tx in filtered_transactions
-            if tx.symbol == payload.symbol
-            and tx.market == payload.market
-            and tx.cash_currency == payload.cash_currency
-        )
+        stock_splits = repository.list_stock_splits()
+        available_quantity = _available_sell_quantity(filtered_transactions, stock_splits, payload)
         if available_quantity + payload.quantity < -1e-9:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -154,7 +191,9 @@ def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Trans
 
     updated_transaction = Transaction(id=transaction_id, **payload.model_dump())
     try:
-        return repository.update_transaction(updated_transaction)
+        transaction = repository.update_transaction(updated_transaction)
+        rebuild_and_persist_realized_pnl(repository)
+        return transaction
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -163,9 +202,15 @@ def update_transaction(transaction_id: str, payload: TransactionUpdate) -> Trans
 def delete_transaction(transaction_id: str) -> Response:
     try:
         repository.delete_transaction(transaction_id)
+        rebuild_and_persist_realized_pnl(repository)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/realized-pnl", response_model=list[RealizedPnLRecord])
+def list_realized_pnl() -> list[RealizedPnLRecord]:
+    return repository.list_realized_pnl_records()
 
 
 @router.get("/positions", response_model=list[Position])
@@ -173,8 +218,10 @@ def get_positions() -> list[Position]:
     transactions = repository.list_transactions()
     fx_exchanges = repository.list_fx_exchanges()
     quotes = repository.list_quotes()
+    realized_pnl_records = repository.list_realized_pnl_records()
+    stock_splits = repository.list_stock_splits()
     try:
-        return compute_positions(transactions, fx_exchanges, quotes)
+        return compute_positions(transactions, fx_exchanges, quotes, realized_pnl_records, stock_splits)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -204,15 +251,21 @@ def get_funds() -> FundSnapshots:
     transactions = repository.list_transactions()
     groups = repository.list_funding_groups()
     settlements = repository.list_tax_settlements()
+    annual_settlements = repository.list_annual_tax_settlements()
     adjustments = repository.list_capital_adjustments()
     fx_exchanges = repository.list_fx_exchanges()
+    stock_splits = repository.list_stock_splits()
+    realized_pnl_records = repository.list_realized_pnl_records()
     try:
         return compute_fund_snapshots(
             transactions,
             groups,
             settlements,
+            annual_settlements,
             adjustments,
             fx_exchanges,
+            stock_splits,
+            realized_pnl_records,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -280,6 +333,32 @@ def add_funding_capital(
 )
 def list_capital_adjustments() -> list[FundingCapitalAdjustment]:
     return repository.list_capital_adjustments()
+
+
+@router.get("/stock-splits", response_model=list[StockSplitRecord])
+def list_stock_splits() -> list[StockSplitRecord]:
+    return repository.list_stock_splits()
+
+
+@router.post(
+    "/stock-splits",
+    response_model=StockSplitRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_stock_split(payload: StockSplitBase) -> StockSplitRecord:
+    record = repository.add_stock_split(StockSplitCreate(**payload.model_dump()))
+    rebuild_and_persist_realized_pnl(repository)
+    return record
+
+
+@router.delete("/stock-splits/{split_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_stock_split(split_id: str) -> Response:
+    try:
+        repository.delete_stock_split(split_id)
+        rebuild_and_persist_realized_pnl(repository)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/fx-exchanges", response_model=list[FxExchangeRecord])
@@ -359,3 +438,71 @@ def remove_tax_settlement(settlement_id: str) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/tax/annual", response_model=list[AnnualTaxSettlement])
+def list_annual_tax_settlements() -> list[AnnualTaxSettlement]:
+    return repository.list_annual_tax_settlements()
+
+
+@router.post(
+    "/tax/annual",
+    response_model=AnnualTaxSettlement,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_annual_tax_settlement(payload: AnnualTaxSettlementCreate) -> AnnualTaxSettlement:
+    try:
+        repository.get_funding_group(payload.funding_group)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return repository.add_annual_tax_settlement(payload)
+
+
+@router.patch("/tax/annual/{settlement_id}", response_model=AnnualTaxSettlement)
+def patch_annual_tax_settlement(
+    settlement_id: str, payload: AnnualTaxSettlementUpdate
+) -> AnnualTaxSettlement:
+    try:
+        return repository.update_annual_tax_settlement(settlement_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/tax/annual/{settlement_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_annual_tax_settlement(settlement_id: str) -> Response:
+    try:
+        repository.delete_annual_tax_settlement(settlement_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/imports/broker/preview", response_model=BrokerImportPreviewResponse)
+def preview_broker_report_import(
+    payload: BrokerImportPreviewRequest,
+) -> BrokerImportPreviewResponse:
+    return preview_broker_import(payload)
+
+
+@router.post("/imports/broker/apply", response_model=BrokerImportPreviewResponse)
+def apply_broker_report_import(
+    payload: BrokerImportApplyRequest,
+) -> BrokerImportPreviewResponse:
+    preview = apply_broker_import(payload)
+    transactions = preview_items_to_transactions(preview.items)
+    if payload.replace_existing_transactions:
+        repository.replace_transactions(transactions)
+        repository.clear_tax_settlements()
+        rebuild_and_persist_realized_pnl(repository, transactions)
+        preview.applied_count = len(transactions)
+        preview.skipped_count = 0
+        return preview
+
+    merged_transactions, applied_count, skipped_count = repository.merge_transactions_skip_duplicates(transactions)
+    if applied_count:
+        rebuild_and_persist_realized_pnl(repository, merged_transactions)
+    preview.applied_count = applied_count
+    preview.skipped_count = skipped_count
+    if skipped_count:
+        preview.warnings.append(f"Skipped {skipped_count} duplicate transactions")
+    return preview

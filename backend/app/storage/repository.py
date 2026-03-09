@@ -8,6 +8,10 @@ from typing import Callable, Iterable, List, Sequence, TypeVar
 from uuid import uuid4
 
 from ..models.schemas import (
+    AnnualTaxSettlement,
+    AnnualTaxSettlementCreate,
+    AnnualTaxSettlementUpdate,
+    BrokerAccountType,
     Currency,
     FxExchangeCreate,
     FxExchangeRecord,
@@ -16,6 +20,9 @@ from ..models.schemas import (
     FundingGroup,
     FundingGroupUpdate,
     QuoteRecord,
+    RealizedPnLRecord,
+    StockSplitCreate,
+    StockSplitRecord,
     TaxSettlementRecord,
     TaxStatus,
     Transaction,
@@ -70,14 +77,20 @@ class LocalDataRepository:
         self._transactions_path = self.base_path / "transactions.json"
         self._funding_groups_path = self.base_path / "funding_groups.json"
         self._tax_settlements_path = self.base_path / "tax_settlements.json"
+        self._annual_tax_settlements_path = self.base_path / "annual_tax_settlements.json"
+        self._realized_pnl_path = self.base_path / "realized_pnl.json"
         self._capital_adjustments_path = self.base_path / "capital_adjustments.json"
+        self._stock_splits_path = self.base_path / "stock_splits.json"
         self._fx_exchanges_path = self.base_path / "fx_exchanges.json"
         self._quotes_path = self.base_path / "quotes.json"
         for path in (
             self._transactions_path,
             self._funding_groups_path,
             self._tax_settlements_path,
+            self._annual_tax_settlements_path,
+            self._realized_pnl_path,
             self._capital_adjustments_path,
+            self._stock_splits_path,
             self._fx_exchanges_path,
             self._quotes_path,
         ):
@@ -94,12 +107,18 @@ class LocalDataRepository:
         groups = self.list_funding_groups()
         settlements = self.list_tax_settlements()
         capital_adjustments = self.list_capital_adjustments()
+        stock_splits = self.list_stock_splits()
+        annual_tax_settlements = self.list_annual_tax_settlements()
+        realized_pnl_records = self.list_realized_pnl_records()
         fx_exchanges = self.list_fx_exchanges()
         quotes = self.list_quotes()
         self.sqlite.replace_transactions(transactions)
         self.sqlite.replace_funding_groups(groups)
         self.sqlite.replace_tax_settlements(settlements)
+        self.sqlite.replace_annual_tax_settlements(annual_tax_settlements)
+        self.sqlite.replace_realized_pnl_records(realized_pnl_records)
         self.sqlite.replace_capital_adjustments(capital_adjustments)
+        self.sqlite.replace_stock_splits(stock_splits)
         self.sqlite.replace_fx_exchanges(fx_exchanges)
         self.sqlite.replace_quotes(quotes)
 
@@ -147,6 +166,20 @@ class LocalDataRepository:
                 data["buy_currency"] = None
             if "sell_currency" not in data:
                 data["sell_currency"] = None
+            if "position_group" not in data:
+                data["position_group"] = data.get("funding_group")
+            if "settlement_group" not in data:
+                data["settlement_group"] = data.get("funding_group")
+            if "trade_currency" not in data:
+                data["trade_currency"] = Currency.USD if data.get("market") == "US" else data.get("cash_currency")
+            if "trade_amount" not in data:
+                data["trade_amount"] = data.get("gross_amount")
+            if "settlement_currency" not in data:
+                data["settlement_currency"] = data.get("cash_currency")
+            if "settlement_amount" not in data:
+                data["settlement_amount"] = data.get("gross_amount")
+            if "broker_account_type" not in data:
+                data["broker_account_type"] = BrokerAccountType.UNKNOWN
             records.append(Transaction(**data))
         return records
 
@@ -353,6 +386,93 @@ class LocalDataRepository:
     def list_tax_settlements_from_sqlite(self) -> list[TaxSettlementRecord]:
         return self.sqlite.load_tax_settlements()
 
+    def list_annual_tax_settlements(self) -> list[AnnualTaxSettlement]:
+        payload = json.loads(self._annual_tax_settlements_path.read_text(encoding="utf-8") or "[]")
+        return [AnnualTaxSettlement(**item) for item in payload]
+
+    def list_annual_tax_settlements_from_sqlite(self) -> list[AnnualTaxSettlement]:
+        return self.sqlite.load_annual_tax_settlements()
+
+    def list_realized_pnl_records(self) -> list[RealizedPnLRecord]:
+        payload = json.loads(self._realized_pnl_path.read_text(encoding="utf-8") or "[]")
+        return [RealizedPnLRecord(**item) for item in payload]
+
+    def list_realized_pnl_records_from_sqlite(self) -> list[RealizedPnLRecord]:
+        return self.sqlite.load_realized_pnl_records()
+
+    def replace_realized_pnl_records(self, records: Iterable[RealizedPnLRecord]) -> None:
+        self._write_with_mirror(
+            self._realized_pnl_path,
+            records,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_realized_pnl_records,
+            lambda payload: RealizedPnLRecord(**payload),
+        )
+
+    def add_annual_tax_settlement(
+        self, payload: AnnualTaxSettlementCreate
+    ) -> AnnualTaxSettlement:
+        record = AnnualTaxSettlement(id=str(uuid4()), **payload.model_dump())
+        records = self.list_annual_tax_settlements()
+        records.append(record)
+        self._write_annual_tax_settlements(records)
+        return record
+
+    def update_annual_tax_settlement(
+        self, settlement_id: str, payload: AnnualTaxSettlementUpdate
+    ) -> AnnualTaxSettlement:
+        records = self.list_annual_tax_settlements()
+        for index, record in enumerate(records):
+            if record.id == settlement_id:
+                updated = record.model_copy(update=payload.model_dump(exclude_unset=True))
+                records[index] = updated
+                self._write_annual_tax_settlements(records)
+                return updated
+        raise ValueError(f"Annual tax settlement {settlement_id} not found")
+
+    def delete_annual_tax_settlement(self, settlement_id: str) -> None:
+        records = self.list_annual_tax_settlements()
+        updated = [item for item in records if item.id != settlement_id]
+        if len(updated) == len(records):
+            raise ValueError(f"Annual tax settlement {settlement_id} not found")
+        self._write_annual_tax_settlements(updated)
+
+    def replace_transactions(self, transactions: Iterable[Transaction]) -> None:
+        self._write_transactions(transactions)
+
+    def merge_transactions_skip_duplicates(
+        self, transactions: Iterable[Transaction]
+    ) -> tuple[list[Transaction], int, int]:
+        existing_transactions = self.list_transactions()
+        existing_ids = {item.id for item in existing_transactions}
+        merged_transactions = list(existing_transactions)
+        applied_count = 0
+        skipped_count = 0
+
+        for transaction in transactions:
+            if transaction.id in existing_ids:
+                skipped_count += 1
+                continue
+            merged_transactions.append(transaction)
+            existing_ids.add(transaction.id)
+            applied_count += 1
+
+        if applied_count:
+            self._write_transactions(merged_transactions)
+
+        return merged_transactions, applied_count, skipped_count
+
+    def _write_annual_tax_settlements(
+        self, settlements: Iterable[AnnualTaxSettlement]
+    ) -> None:
+        self._write_with_mirror(
+            self._annual_tax_settlements_path,
+            settlements,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_annual_tax_settlements,
+            lambda payload: AnnualTaxSettlement(**payload),
+        )
+
     def get_tax_settlement(self, settlement_id: str) -> TaxSettlementRecord:
         for record in self.list_tax_settlements():
             if record.id == settlement_id:
@@ -392,6 +512,9 @@ class LocalDataRepository:
             lambda payload: TaxSettlementRecord(**payload),
         )
 
+    def clear_tax_settlements(self) -> None:
+        self._write_tax_settlements([])
+
     # Capital adjustments ---------------------------------------------------------
     def list_capital_adjustments(self) -> list[FundingCapitalAdjustment]:
         payload = json.loads(self._capital_adjustments_path.read_text(encoding="utf-8") or "[]")
@@ -422,6 +545,37 @@ class LocalDataRepository:
             lambda item: item.model_dump(mode="json"),
             self.sqlite.replace_capital_adjustments,
             lambda payload: FundingCapitalAdjustment(**payload),
+        )
+
+    def list_stock_splits(self) -> list[StockSplitRecord]:
+        payload = json.loads(self._stock_splits_path.read_text(encoding="utf-8") or "[]")
+        records = [StockSplitRecord(**item) for item in payload]
+        return sorted(records, key=lambda item: (item.effective_date, item.symbol, item.id))
+
+    def list_stock_splits_from_sqlite(self) -> list[StockSplitRecord]:
+        return self.sqlite.load_stock_splits()
+
+    def add_stock_split(self, payload: StockSplitCreate) -> StockSplitRecord:
+        record = StockSplitRecord(id=str(uuid4()), **payload.model_dump())
+        records = self.list_stock_splits()
+        records.append(record)
+        self._write_stock_splits(records)
+        return record
+
+    def delete_stock_split(self, split_id: str) -> None:
+        records = self.list_stock_splits()
+        updated = [item for item in records if item.id != split_id]
+        if len(updated) == len(records):
+            raise ValueError(f"Stock split {split_id} not found")
+        self._write_stock_splits(updated)
+
+    def _write_stock_splits(self, records: Iterable[StockSplitRecord]) -> None:
+        self._write_with_mirror(
+            self._stock_splits_path,
+            records,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_stock_splits,
+            lambda payload: StockSplitRecord(**payload),
         )
 
     # FX exchanges ----------------------------------------------------------------

@@ -27,6 +27,29 @@
       {{ t("positions.quotesAsOf", { date: quotes.as_of }) }}
     </p>
 
+    <div v-if="selectedPosition" class="selection-details selection-details--position">
+      <div class="selection-details__header">
+        <span class="selection-pill">{{ selectedPosition.symbol }}</span>
+        <div class="inline-tags">
+          <span class="flat-tag">{{ marketLabel(selectedPosition.market) }}</span>
+          <span
+            v-for="entry in selectedPosition.breakdown"
+            :key="`${selectedPosition.symbol}-${entry.currency}`"
+            class="flat-tag"
+          >
+            {{ currencySymbol(entry.currency) }}
+          </span>
+        </div>
+      </div>
+      <div v-if="selectedPosition.group_breakdown.length" class="group-summary-list">
+        <div v-for="group in selectedPosition.group_breakdown" :key="groupKey(selectedPosition, group)" class="group-summary-item">
+          <span>{{ group.funding_group }}</span>
+          <strong>{{ formatGroupQuantity(group) }}</strong>
+          <span>{{ formatCurrencyValue(group.average_cost, group.currency) }}</span>
+        </div>
+      </div>
+    </div>
+
     <div class="surface-group">
       <section class="surface">
         <h3>{{ t("positions.activeTitle", { count: activePositions.length }) }}</h3>
@@ -36,23 +59,23 @@
               <tr>
                 <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
-                <th>{{ t("positions.table.market") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.cost") }}</th>
-                <th class="numeric">{{ t("positions.table.pl") }}</th>
                 <th class="numeric">{{ t("positions.table.price") }}</th>
                 <th class="numeric">{{ t("positions.table.unrealized") }}</th>
+                <th>{{ t("common.labels.tags") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!activePositions.length">
-                <td colspan="8" class="empty">{{ t("positions.emptyActive") }}</td>
+                <td colspan="7" class="empty">{{ t("positions.emptyActive") }}</td>
               </tr>
-              <template v-for="item in pagedActivePositions" :key="rowKey(item)">
-                <tr
-                  :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
-                  @click="handleRowClick(item)"
-                >
+              <tr
+                v-for="item in pagedActivePositions"
+                :key="rowKey(item)"
+                :class="['position-row', { selected: isSelected(item) }]"
+                @click="handleRowClick(item)"
+              >
                   <td class="select-column" @click.stop>
                     <input
                       type="radio"
@@ -63,62 +86,22 @@
                   </td>
                   <td>
                     <div class="symbol-cell">
-                      <span
-                        v-if="hasGroupBreakdown(item)"
-                        :class="['chevron', { open: isExpanded(rowKey(item)) }]"
-                        aria-hidden="true"
-                      ></span>
                       <span>{{ item.symbol }}</span>
                     </div>
                   </td>
-                  <td>{{ marketLabel(item.market) }}</td>
                   <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
                   <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
-                  <td :class="['numeric', profitClass(item.breakdown)]">
-                    {{ formatProfitBreakdown(item.breakdown) }}
-                  </td>
                   <td class="numeric">{{ formatPriceBreakdown(item.breakdown) }}</td>
                   <td :class="['numeric', profitClass(item.breakdown)]">
                     {{ formatUnrealizedBreakdown(item.breakdown) }}
                   </td>
-                </tr>
-                <tr
-                  v-if="hasGroupBreakdown(item) && isExpanded(rowKey(item))"
-                  :key="`${rowKey(item)}-details`"
-                  class="group-row"
-                >
-                  <td colspan="8">
-                    <div class="group-table-wrapper">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>{{ t("positions.groupTable.group") }}</th>
-                            <th class="numeric">{{ t("positions.table.quantity") }}</th>
-                            <th class="numeric">{{ t("positions.table.cost") }}</th>
-                            <th class="numeric">{{ t("positions.table.pl") }}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr
-                            v-for="group in item.group_breakdown"
-                            :key="groupKey(item, group)"
-                          >
-                            <td>
-                              <span class="group-name">{{ group.funding_group }}</span>
-                              <span class="group-currency">{{ currencySymbol(group.currency) }}</span>
-                            </td>
-                            <td class="numeric">{{ formatGroupQuantity(group) }}</td>
-                            <td class="numeric">{{ formatCurrencyValue(group.average_cost, group.currency) }}</td>
-                            <td :class="['numeric', profitClassForGroup(group)]">
-                              {{ formatCurrencyValue(group.realized_pl, group.currency) }}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                  <td>
+                    <div class="inline-tags">
+                      <span class="flat-tag">{{ marketLabel(item.market) }}</span>
+                      <span class="flat-tag">{{ item.group_breakdown.length }} {{ t("positions.groupTable.group") }}</span>
                     </div>
                   </td>
                 </tr>
-              </template>
             </tbody>
           </table>
         </div>
@@ -139,22 +122,21 @@
               <tr>
                 <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
-                <th>{{ t("positions.table.market") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.pl") }}</th>
-                <th class="numeric">{{ t("positions.table.price") }}</th>
-                <th class="numeric">{{ t("positions.table.unrealized") }}</th>
+                <th>{{ t("common.labels.tags") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!closedPositions.length">
-                <td colspan="7" class="empty">{{ t("positions.emptyClosed") }}</td>
+                <td colspan="5" class="empty">{{ t("positions.emptyClosed") }}</td>
               </tr>
-              <template v-for="item in pagedClosedPositions" :key="rowKey(item)">
-                <tr
-                  :class="['position-row', { clickable: hasGroupBreakdown(item), expanded: isExpanded(rowKey(item)) }]"
-                  @click="handleRowClick(item)"
-                >
+              <tr
+                v-for="item in pagedClosedPositions"
+                :key="rowKey(item)"
+                :class="['position-row', { selected: isSelected(item) }]"
+                @click="handleRowClick(item)"
+              >
                   <td class="select-column" @click.stop>
                     <input
                       type="radio"
@@ -165,61 +147,20 @@
                   </td>
                   <td>
                     <div class="symbol-cell">
-                      <span
-                        v-if="hasGroupBreakdown(item)"
-                        :class="['chevron', { open: isExpanded(rowKey(item)) }]"
-                        aria-hidden="true"
-                      ></span>
                       <span>{{ item.symbol }}</span>
                     </div>
                   </td>
-                  <td>{{ marketLabel(item.market) }}</td>
                   <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
                   <td :class="['numeric', profitClass(item.breakdown)]">
                     {{ formatProfitBreakdown(item.breakdown) }}
                   </td>
-                  <td class="numeric">{{ formatPriceBreakdown(item.breakdown) }}</td>
-                  <td :class="['numeric', profitClass(item.breakdown)]">
-                    {{ formatUnrealizedBreakdown(item.breakdown) }}
-                  </td>
-                </tr>
-                <tr
-                  v-if="hasGroupBreakdown(item) && isExpanded(rowKey(item))"
-                  :key="`${rowKey(item)}-details`"
-                  class="group-row"
-                >
-                  <td colspan="7">
-                    <div class="group-table-wrapper">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>{{ t("positions.groupTable.group") }}</th>
-                            <th class="numeric">{{ t("positions.table.quantity") }}</th>
-                            <th class="numeric">{{ t("positions.table.cost") }}</th>
-                            <th class="numeric">{{ t("positions.table.pl") }}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr
-                            v-for="group in item.group_breakdown"
-                            :key="groupKey(item, group)"
-                          >
-                            <td>
-                              <span class="group-name">{{ group.funding_group }}</span>
-                              <span class="group-currency">{{ currencySymbol(group.currency) }}</span>
-                            </td>
-                            <td class="numeric">{{ formatGroupQuantity(group) }}</td>
-                            <td class="numeric">{{ formatCurrencyValue(group.average_cost, group.currency) }}</td>
-                            <td :class="['numeric', profitClassForGroup(group)]">
-                              {{ formatCurrencyValue(group.realized_pl, group.currency) }}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                  <td>
+                    <div class="inline-tags">
+                      <span class="flat-tag">{{ marketLabel(item.market) }}</span>
+                      <span class="flat-tag">{{ item.group_breakdown.length }} {{ t("positions.groupTable.group") }}</span>
                     </div>
                   </td>
                 </tr>
-              </template>
             </tbody>
           </table>
         </div>
@@ -333,8 +274,6 @@ const historyTitle = computed(() => {
   return `${selectedPosition.value.symbol} (${selectedPosition.value.market})`;
 });
 
-const expandedRows = ref<Set<string>>(new Set());
-
 function rowKey(position: Position): string {
   return `${position.symbol}-${position.market}`;
 }
@@ -348,29 +287,8 @@ function isSelected(position: Position): boolean {
   return selectedKey.value === rowKey(position);
 }
 
-function hasGroupBreakdown(position: Position): boolean {
-  return Array.isArray(position.group_breakdown) && position.group_breakdown.length > 0;
-}
-
-function isExpanded(key: string): boolean {
-  return expandedRows.value.has(key);
-}
-
-function toggleRow(key: string): void {
-  const next = new Set(expandedRows.value);
-  if (next.has(key)) {
-    next.delete(key);
-  } else {
-    next.add(key);
-  }
-  expandedRows.value = next;
-}
-
 function handleRowClick(position: Position): void {
-  if (!hasGroupBreakdown(position)) {
-    return;
-  }
-  toggleRow(rowKey(position));
+  selectPosition(position);
 }
 
 function groupKey(position: Position, entry: PositionGroupBreakdown): string {
@@ -385,12 +303,6 @@ watch(
       selectedKey.value = null;
       selectedPosition.value = null;
     }
-    if (!expandedRows.value.size) {
-      return;
-    }
-    expandedRows.value = new Set(
-      [...expandedRows.value].filter((key) => validKeys.has(key))
-    );
   }
 );
 
@@ -560,17 +472,8 @@ function formatQuantityBreakdown(breakdown: PositionBreakdown[]): string {
     return "-";
   }
 
-  // 格式化每个币种的仓位数量，保持零仓位时也至少展示一项，便于核对双币种持仓。
-  const formatted = breakdown
-    .map((entry) => ({
-      absolute: Math.abs(entry.quantity),
-      display: `${formatNumber(entry.quantity)}${currencySymbol(entry.currency)}`,
-    }))
-    .filter(
-      (entry, _, array) => entry.absolute > 1e-9 || array.every((item) => item.absolute <= 1e-9)
-    );
-
-  return formatted.map((entry) => entry.display).join(" / ");
+  const totalQuantity = breakdown.reduce((sum, entry) => sum + entry.quantity, 0);
+  return formatNumber(totalQuantity);
 }
 
 function formatGroupQuantity(entry: PositionGroupBreakdown): string {
@@ -637,17 +540,6 @@ function profitClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
   };
 }
 
-function profitClassForGroup(entry: PositionGroupBreakdown): Record<string, boolean> {
-  return profitClass([
-    {
-      currency: entry.currency,
-      quantity: entry.quantity,
-      average_cost: entry.average_cost,
-      realized_pl: entry.realized_pl,
-    } as PositionBreakdown,
-  ]);
-}
-
 function marketLabel(value: string): string {
   return value === "US"
     ? t("common.toggle.market.us")
@@ -666,15 +558,7 @@ function marketLabel(value: string): string {
 }
 
 .positions-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.1) 55%, rgba(255, 255, 255, 0)),
-    radial-gradient(circle at 100% 0%, rgba(15, 167, 201, 0.16), transparent 55%);
-  mix-blend-mode: overlay;
-  opacity: 0.4;
+  content: none;
 }
 
 .positions-panel > * {
@@ -704,21 +588,21 @@ function marketLabel(value: string): string {
 }
 
 .ghost-button {
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--divider);
-  background: linear-gradient(180deg, var(--panel), var(--panel-alt));
+  background: #fff;
   color: var(--text-dim);
   padding: 0.55rem 1.25rem;
   font-size: 0.85rem;
-  letter-spacing: 0.6px;
+  letter-spacing: 0;
   cursor: pointer;
-  transition: border-color var(--transition), color var(--transition), transform var(--transition);
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
 }
 
 .ghost-button:hover {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
-  transform: translateY(-1px);
+  border-color: rgba(30, 156, 90, 0.24);
+  color: var(--accent-strong);
+  background: var(--panel-soft);
 }
 
 .quotes-meta {
@@ -742,8 +626,8 @@ function marketLabel(value: string): string {
 .surface {
   border-radius: var(--radius-lg);
   border: 1px solid var(--divider);
-  background: linear-gradient(180deg, var(--panel-alt), var(--panel));
-  box-shadow: var(--shadow-soft);
+  background: var(--panel-alt);
+  box-shadow: none;
   padding: clamp(1.3rem, 2.6vw, 1.8rem);
   display: flex;
   flex-direction: column;
@@ -752,10 +636,10 @@ function marketLabel(value: string): string {
 }
 
 .surface h3 {
-  font-size: 0.95rem;
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
 }
 
 .table-scroll {
@@ -763,7 +647,7 @@ function marketLabel(value: string): string {
   border-radius: var(--radius-md);
   border: 1px solid var(--divider);
   background: var(--panel);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .table-scroll table {
@@ -771,10 +655,10 @@ function marketLabel(value: string): string {
 }
 
 .table-scroll thead {
-  background: linear-gradient(180deg, rgba(11, 61, 145, 0.08), rgba(11, 61, 145, 0));
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.65px;
+  background: var(--panel-soft);
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: 0;
   font-size: 0.78rem;
 }
 
@@ -794,7 +678,7 @@ function marketLabel(value: string): string {
 .select-column input {
   width: 1rem;
   height: 1rem;
-  accent-color: var(--accent-cyan);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -806,15 +690,16 @@ function marketLabel(value: string): string {
 }
 
 .table-scroll tbody tr:hover {
-  background: rgba(15, 167, 201, 0.08);
+  background: rgba(30, 156, 90, 0.04);
 }
 
-.position-row.clickable td {
+.position-row td {
   cursor: pointer;
 }
 
-.position-row.expanded {
-  background: rgba(15, 167, 201, 0.12);
+.position-row.selected {
+  background: rgba(30, 156, 90, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(30, 156, 90, 0.24);
 }
 
 .symbol-cell {
@@ -823,61 +708,36 @@ function marketLabel(value: string): string {
   gap: 0.6rem;
 }
 
-.chevron {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  border: solid var(--text-dim);
-  border-width: 0 0.12rem 0.12rem 0;
-  transform: rotate(45deg);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+.selection-details {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: #fff;
 }
 
-.chevron.open {
-  transform: rotate(135deg);
-  border-color: var(--accent);
+.selection-details__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.group-row td {
-  padding: 0;
-  background: rgba(11, 61, 145, 0.04);
+.group-summary-list {
+  display: grid;
+  gap: 0.55rem;
 }
 
-.group-table-wrapper {
-  padding: 0.6rem 1.25rem 1rem;
-}
-
-.group-table-wrapper table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.group-table-wrapper thead {
-  color: var(--text-faint);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.group-table-wrapper th,
-.group-table-wrapper td {
-  border-bottom: 1px solid var(--divider);
-  padding: 0.55rem 0.75rem;
+.group-summary-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--divider);
   font-size: 0.88rem;
-}
-
-.group-table-wrapper tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.group-name {
-  font-weight: 600;
-  margin-right: 0.4rem;
-}
-
-.group-currency {
-  color: var(--text-faint);
-  font-size: 0.82rem;
 }
 
 .empty {

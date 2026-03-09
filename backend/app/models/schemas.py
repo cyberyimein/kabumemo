@@ -22,6 +22,13 @@ class TaxStatus(str, Enum):
     NO = "N"
 
 
+class BrokerAccountType(str, Enum):
+    NISA = "NISA"
+    SPECIFIC = "SPECIFIC"
+    GENERAL = "GENERAL"
+    UNKNOWN = "UNKNOWN"
+
+
 class TradeSide(str, Enum):
     BUY = "buy"
     SELL = "sell"
@@ -53,6 +60,31 @@ class FundingCapitalAdjustmentCreate(FundingCapitalAdjustmentBase):
 class FundingCapitalAdjustment(FundingCapitalAdjustmentBase):
     id: str
     funding_group: str
+
+
+class StockSplitBase(BaseModel):
+    symbol: str = Field(..., min_length=1)
+    market: Market
+    effective_date: date
+    ratio_before: float = Field(..., gt=0.0)
+    ratio_after: float = Field(..., gt=0.0)
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_symbol(self) -> "StockSplitBase":
+        normalized = self.symbol.strip().upper()
+        if self.market == Market.JP and normalized and not normalized.endswith(".T"):
+            normalized = f"{normalized}.T"
+        self.symbol = normalized
+        return self
+
+
+class StockSplitCreate(StockSplitBase):
+    pass
+
+
+class StockSplitRecord(StockSplitBase):
+    id: str
 
 
 class FxExchangeBase(BaseModel):
@@ -104,6 +136,13 @@ class TransactionBase(BaseModel):
     gross_amount: float = Field(..., gt=0.0, description="Total cash outlay or proceeds")
     funding_group: str = Field(..., min_length=1)
     cash_currency: Currency
+    position_group: Optional[str] = None
+    settlement_group: Optional[str] = None
+    trade_currency: Optional[Currency] = None
+    trade_amount: Optional[float] = Field(default=None, gt=0.0)
+    settlement_currency: Optional[Currency] = None
+    settlement_amount: Optional[float] = Field(default=None, gt=0.0)
+    broker_account_type: BrokerAccountType = BrokerAccountType.UNKNOWN
     cross_currency: bool = False
     buy_currency: Optional[Currency] = None
     sell_currency: Optional[Currency] = None
@@ -125,6 +164,22 @@ class TransactionBase(BaseModel):
             if normalized and not normalized.endswith(".T"):
                 normalized = f"{normalized}.T"
             self.symbol = normalized
+
+        if self.position_group is None:
+            self.position_group = self.funding_group
+        if self.settlement_group is None:
+            self.settlement_group = self.funding_group
+
+        default_trade_currency = Currency.USD if self.market == Market.US else Currency.JPY
+        if self.trade_currency is None:
+            self.trade_currency = default_trade_currency
+        if self.trade_amount is None:
+            self.trade_amount = self.gross_amount
+        if self.settlement_currency is None:
+            self.settlement_currency = self.cash_currency
+        if self.settlement_amount is None:
+            self.settlement_amount = self.gross_amount
+
         if self.cross_currency:
             if self.quantity >= 0:
                 raise ValueError("cross_currency is only valid for sell transactions")
@@ -182,6 +237,32 @@ class Position(BaseModel):
     market: Market
     breakdown: list[PositionBreakdown]
     group_breakdown: list[PositionGroupBreakdown] = Field(default_factory=list)
+
+
+class RealizedPnLAllocation(BaseModel):
+    funding_group: str
+    quantity: float
+    cost_basis: float
+    realized_pl: float
+
+
+class RealizedPnLRecord(BaseModel):
+    id: str
+    sell_transaction_id: str
+    trade_date: date
+    symbol: str
+    market: Market
+    broker_account_type: BrokerAccountType
+    position_currency: Currency
+    settlement_currency: Currency
+    quantity: float = Field(..., gt=0.0)
+    matched_quantity: float = Field(default=0.0, ge=0.0)
+    unmatched_quantity: float = Field(default=0.0, ge=0.0)
+    proceeds_amount: float
+    cost_basis: float
+    realized_pl: float
+    allocations: list[RealizedPnLAllocation] = Field(default_factory=list)
+    memo: Optional[str] = None
 
 
 class QuoteRecord(BaseModel):
@@ -312,6 +393,76 @@ class TaxSettlementUpdate(BaseModel):
     funding_group: Optional[str] = Field(default=None, min_length=1)
     exchange_rate: Optional[float] = Field(default=None, gt=0.0)
     balance_exchange_rate: Optional[float] = Field(default=None, gt=0.0)
+
+
+class AnnualTaxSettlementBase(BaseModel):
+    year: int = Field(..., ge=2000, le=2100)
+    funding_group: str = Field(..., min_length=1)
+    amount: float = Field(..., gt=0.0)
+    currency: Currency = Currency.JPY
+    notes: Optional[str] = None
+
+
+class AnnualTaxSettlementCreate(AnnualTaxSettlementBase):
+    recorded_at: date = Field(default_factory=date.today)
+
+
+class AnnualTaxSettlementUpdate(BaseModel):
+    funding_group: Optional[str] = Field(default=None, min_length=1)
+    amount: Optional[float] = Field(default=None, gt=0.0)
+    currency: Optional[Currency] = None
+    notes: Optional[str] = None
+    recorded_at: Optional[date] = None
+
+
+class AnnualTaxSettlement(AnnualTaxSettlementBase):
+    id: str
+    recorded_at: date
+
+
+class BrokerImportFile(BaseModel):
+    file_name: str
+    content_base64: str
+    encoding_hint: Optional[str] = None
+
+
+class BrokerImportPreviewRequest(BaseModel):
+    domestic_report: Optional[BrokerImportFile] = None
+    us_report: Optional[BrokerImportFile] = None
+    position_group_jpy: str = "JPY"
+    settlement_group_jpy: str = "JPY"
+    position_group_usd: str = "USD"
+    settlement_group_usd: str = "USD"
+
+
+class BrokerImportPreviewItem(BaseModel):
+    trade_date: date
+    symbol: str
+    market: Market
+    quantity: float
+    trade_currency: Currency
+    trade_amount: float
+    settlement_currency: Currency
+    settlement_amount: float
+    broker_account_type: BrokerAccountType
+    position_group: str
+    settlement_group: str
+    source_file: str
+    source_line: int
+    transaction_id: str
+    taxed: TaxStatus
+    memo: Optional[str] = None
+
+
+class BrokerImportPreviewResponse(BaseModel):
+    items: list[BrokerImportPreviewItem]
+    warnings: list[str] = Field(default_factory=list)
+    applied_count: int = 0
+    skipped_count: int = 0
+
+
+class BrokerImportApplyRequest(BrokerImportPreviewRequest):
+    replace_existing_transactions: bool = False
 
 
 class RoundTripYieldRequest(BaseModel):
