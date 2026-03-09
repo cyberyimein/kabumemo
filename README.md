@@ -199,12 +199,14 @@ The interface supports Chinese, English, and Japanese. The notification bar anno
 
 - `backend/scripts/import_json_to_sqlite.py`: Run once after upgrading to the dual-storage backend (or anytime you need to rebuild the database) to mirror JSON data into SQLite. Pass `--force` to overwrite existing tables.
 - `backend/scripts/check_data_sync.py`: Compares JSON and SQLite content; exits with a non-zero status when any record is missing or diverges. Combine with CI or cron to flag drift quickly.
+- `backend/scripts/rebuild_data_from_broker_csv.py`: Rebuilds transactions and realized P&L from the UTF-8 broker export files under `realdata/export/`. Keep this script for disaster recovery or clean-room rebuilds after replacing the live data set.
 
 Example usage from the repository root:
 
 ```bash
 python backend/scripts/import_json_to_sqlite.py --data-dir ./data
 python backend/scripts/check_data_sync.py --data-dir ./data --verbose
+python backend/scripts/rebuild_data_from_broker_csv.py --data-dir ./data
 ```
 
 ## Roadmap

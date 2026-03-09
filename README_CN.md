@@ -180,12 +180,14 @@ FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机
 
 - `backend/scripts/import_json_to_sqlite.py`：升级到双存储结构后可执行一次，把现有 JSON 数据导入 SQLite；如需覆盖旧库可追加 `--force`。
 - `backend/scripts/check_data_sync.py`：校验 JSON 与 SQLite 是否一致；检测到缺失或差异时会返回非零退出码，可结合 CI/定时任务使用。
+- `backend/scripts/rebuild_data_from_broker_csv.py`：基于 `realdata/export/` 下的 UTF-8 券商报表重建交易与已实现损益。适合灾难恢复，或在替换 live data 后做一次干净重建。
 
 示例命令（仓库根目录执行）：
 
 ```bash
 python backend/scripts/import_json_to_sqlite.py --data-dir ./data
 python backend/scripts/check_data_sync.py --data-dir ./data --verbose
+python backend/scripts/rebuild_data_from_broker_csv.py --data-dir ./data
 ```
 
 ## 后续规划

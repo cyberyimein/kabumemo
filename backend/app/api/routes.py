@@ -237,9 +237,11 @@ def get_positions_history(
         normalized_period = "1y"
     transactions = repository.list_transactions()
     fx_exchanges = repository.list_fx_exchanges()
+    stock_splits = repository.list_stock_splits()
     return get_position_history(
         transactions=transactions,
         fx_exchanges=fx_exchanges,
+        stock_splits=stock_splits,
         symbol=symbol,
         market=market,
         period=normalized_period,

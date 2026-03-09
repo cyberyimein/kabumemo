@@ -349,7 +349,7 @@
                     <span class="flat-tag" v-if="(tx.settlement_group || tx.funding_group) !== (tx.position_group || tx.funding_group)">
                       {{ tx.position_group || tx.funding_group }} → {{ tx.settlement_group || tx.funding_group }}
                     </span>
-                    <span class="flat-tag">{{ tx.settlement_currency || tx.cash_currency }}</span>
+                    <span class="flat-tag flat-tag--currency">{{ tx.settlement_currency || tx.cash_currency }}</span>
                     <span class="flat-tag">{{ marketLabel(tx.market) }}</span>
                   </div>
                 </td>

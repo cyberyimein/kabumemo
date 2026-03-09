@@ -137,6 +137,23 @@ export function refreshQuotes(force = false): Promise<QuoteSnapshot> {
   });
 }
 
+export async function getUsdJpyRate(): Promise<number> {
+  const response = await fetch("https://api.frankfurter.app/latest?from=USD&to=JPY");
+
+  if (!response.ok) {
+    throw new ApiError(response.statusText || "Unable to fetch exchange rate", response.status);
+  }
+
+  const payload = (await response.json()) as { rates?: { JPY?: number } };
+  const rate = payload.rates?.JPY;
+
+  if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+    throw new ApiError("Invalid USD/JPY exchange rate response", 502);
+  }
+
+  return rate;
+}
+
 // Funds --------------------------------------------------------------------------
 export function getFunds(): Promise<FundSnapshotsResponse> {
   return request<FundSnapshotsResponse>("/funds");

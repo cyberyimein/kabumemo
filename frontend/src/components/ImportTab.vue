@@ -21,27 +21,19 @@
           </label>
           <label>
             <span>{{ t("imports.fields.jpyPositionGroup") }}</span>
-            <select v-model="positionGroupJpy">
-              <option v-for="group in jpyGroups" :key="group.name" :value="group.name">{{ group.name }}</option>
-            </select>
+            <BaseSelect v-model="positionGroupJpy" :options="jpyGroupOptions" />
           </label>
           <label>
             <span>{{ t("imports.fields.jpySettlementGroup") }}</span>
-            <select v-model="settlementGroupJpy">
-              <option v-for="group in jpyGroups" :key="group.name" :value="group.name">{{ group.name }}</option>
-            </select>
+            <BaseSelect v-model="settlementGroupJpy" :options="jpyGroupOptions" />
           </label>
           <label>
             <span>{{ t("imports.fields.usdPositionGroup") }}</span>
-            <select v-model="positionGroupUsd">
-              <option v-for="group in usdGroups" :key="group.name" :value="group.name">{{ group.name }}</option>
-            </select>
+            <BaseSelect v-model="positionGroupUsd" :options="usdGroupOptions" />
           </label>
           <label>
             <span>{{ t("imports.fields.usdSettlementGroup") }}</span>
-            <select v-model="settlementGroupUsd">
-              <option v-for="group in usdGroups" :key="group.name" :value="group.name">{{ group.name }}</option>
-            </select>
+            <BaseSelect v-model="settlementGroupUsd" :options="usdGroupOptions" />
           </label>
         </div>
         <div class="form-actions">
@@ -104,6 +96,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import BaseSelect from "@/components/ui/BaseSelect.vue";
 import { applyBrokerImport, previewBrokerImport } from "@/services/api";
 import type {
   BrokerImportFile,
@@ -131,6 +124,8 @@ const preview = ref<BrokerImportPreviewResponse>({ items: [], warnings: [], appl
 
 const jpyGroups = computed(() => props.fundingGroups.filter((item) => item.currency === "JPY"));
 const usdGroups = computed(() => props.fundingGroups.filter((item) => item.currency === "USD"));
+const jpyGroupOptions = computed(() => jpyGroups.value.map((group) => ({ label: group.name, value: group.name })));
+const usdGroupOptions = computed(() => usdGroups.value.map((group) => ({ label: group.name, value: group.name })));
 
 const positionGroupJpy = ref("JPY");
 const settlementGroupJpy = ref("JPY");

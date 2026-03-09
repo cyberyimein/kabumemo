@@ -14,8 +14,10 @@ from ..models.schemas import (
     PriceHistoryPoint,
     TradeMarker,
     TradeSide,
+    StockSplitRecord,
     Transaction,
 )
+from .stock_splits import build_split_schedule, normalize_symbol, split_factor
 
 
 def _market_currency(market: Market) -> Currency:
@@ -94,13 +96,24 @@ def build_trade_markers(
         quantity = abs(tx.quantity)
         if quantity <= 0:
             continue
-        amount = tx.gross_amount
-        currency = tx.cash_currency
+        settlement_currency = tx.settlement_currency or tx.cash_currency
+        settlement_amount = tx.settlement_amount or tx.gross_amount
+        has_explicit_trade_amount = (
+            tx.trade_currency == market_currency
+            and tx.trade_amount is not None
+            and not (
+                tx.trade_amount == tx.gross_amount
+                and settlement_currency == tx.cash_currency
+                and tx.cash_currency != market_currency
+            )
+        )
+        amount = tx.trade_amount if has_explicit_trade_amount else settlement_amount
+        currency = market_currency if has_explicit_trade_amount else settlement_currency
 
-        if tx.cash_currency != market_currency:
+        if currency != market_currency:
             fx = fx_map.get(tx.id)
-            if fx and {fx.from_currency, fx.to_currency} == {tx.cash_currency, market_currency}:
-                amount = _convert_amount(amount, tx.cash_currency, market_currency, fx.rate)
+            if fx and {fx.from_currency, fx.to_currency} == {settlement_currency, market_currency}:
+                amount = _convert_amount(settlement_amount, settlement_currency, market_currency, fx.rate)
                 currency = market_currency
 
         price = amount / quantity
@@ -119,10 +132,41 @@ def build_trade_markers(
     return markers
 
 
+def _split_adjustment_factor(split_records: list[StockSplitRecord], target_date: date) -> float:
+    factor = 1.0
+    for split in split_records:
+        if target_date < split.effective_date:
+            factor *= split_factor(split)
+    return factor
+
+
+def _adjust_markers_for_splits(
+    markers: list[TradeMarker], split_records: list[StockSplitRecord]
+) -> list[TradeMarker]:
+    if not split_records:
+        return markers
+
+    adjusted: list[TradeMarker] = []
+    for marker in markers:
+        factor = _split_adjustment_factor(split_records, marker.date)
+        adjusted.append(
+            TradeMarker(
+                date=marker.date,
+                price=round(float(marker.price) / factor, 6),
+                side=marker.side,
+                quantity=round(float(marker.quantity) * factor, 6),
+                currency=marker.currency,
+                transaction_id=marker.transaction_id,
+            )
+        )
+    return adjusted
+
+
 def get_position_history(
     *,
     transactions: Iterable[Transaction],
     fx_exchanges: Iterable[FxExchangeRecord],
+    stock_splits: Iterable[StockSplitRecord] | None = None,
     symbol: str,
     market: Market,
     period: str = "1y",
@@ -130,11 +174,15 @@ def get_position_history(
     series = fetch_price_history(symbol, market, period=period)
     markers = build_trade_markers(transactions, fx_exchanges, symbol, market)
     currency = _market_currency(market)
+    split_schedule = build_split_schedule(stock_splits or [])
+    split_records = split_schedule.get((normalize_symbol(symbol, market), market.value), [])
+
+    adjusted_markers = _adjust_markers_for_splits(markers, split_records)
 
     return PositionHistoryResponse(
         symbol=symbol,
         market=market,
         currency=currency,
         series=series,
-        markers=markers,
+        markers=adjusted_markers,
     )

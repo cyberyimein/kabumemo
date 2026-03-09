@@ -41,6 +41,14 @@
         "tax": "未精算税務",
         "taxMeta": "非 NISA 売却"
       }
+    },
+    "goal": {
+      "title": "10 万 USD 目標",
+      "target": "目標 {amount}",
+      "rate": "USD/JPY {rate}",
+      "progress": "達成率 {percent}%",
+      "captionLive": "ページ表示時に取得した USD/JPY レートで、JPY と USD の総資産を一度だけ換算します。",
+      "captionFallback": "リアルタイム為替が取得できなかったため、現在は USD 資金合計のみで計算しています。"
     }
   },
   "tabs": {
@@ -297,9 +305,10 @@
     "emptyAggregate": "サマリー表示できるデータがありません",
     "exchangeRate": {
       "label": "ドル円レート",
-      "helper": "最新の USD/JPY レートを入力すると、すべて円建てで合算したサマリーを表示します。",
+      "helper": "ページ表示時に USD/JPY レートを一度だけ取得し、合算サマリーに使います。",
+      "loading": "最新の USD/JPY レートを取得しています...",
       "invalid": "0 より大きい為替レートを入力してください。",
-      "required": "ドル建ての金額を含めるにはレートを入力してください。"
+      "required": "為替レートを取得できなかったため、ドル建て残高を合算できません。"
     },
     "capitalDialog": {
       "title": "{name} に資金を追加",

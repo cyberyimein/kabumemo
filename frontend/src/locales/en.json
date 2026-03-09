@@ -41,6 +41,14 @@
         "tax": "Pending Tax",
         "taxMeta": "Non-NISA sells"
       }
+    },
+    "goal": {
+      "title": "USD 100k Goal",
+      "target": "Target {amount}",
+      "rate": "USD/JPY {rate}",
+      "progress": "{percent}% complete",
+      "captionLive": "JPY and USD assets are converted once using the live USD/JPY rate fetched when the page opens.",
+      "captionFallback": "Live FX was unavailable, so the goal currently uses only the USD fund total."
     }
   },
   "tabs": {
@@ -297,9 +305,10 @@
     "emptyAggregate": "No aggregate data",
     "exchangeRate": {
       "label": "USD → JPY rate",
-      "helper": "Enter the latest USD/JPY rate to view totals converted to JPY.",
+      "helper": "The page fetches USD/JPY once on load and uses it for the merged fund overview.",
+      "loading": "Fetching the latest USD/JPY rate...",
       "invalid": "Please enter a positive exchange rate.",
-      "required": "Provide a rate to include USD balances."
+      "required": "Live FX is unavailable, so USD balances cannot be converted right now."
     },
     "capitalDialog": {
       "title": "Add capital to {name}",

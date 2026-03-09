@@ -350,12 +350,14 @@ async function loadHistory(): Promise<void> {
       "1y"
     );
     historyData.value = result;
-    await nextTick();
-    renderHistoryChart();
   } catch (error: unknown) {
     historyError.value = asErrorMessage(error);
   } finally {
     historyLoading.value = false;
+    if (historyData.value) {
+      await nextTick();
+      renderHistoryChart();
+    }
   }
 }
 

@@ -118,7 +118,7 @@
                 <td class="notes-cell">{{ group.notes || '-' }}</td>
                 <td>
                   <div class="inline-tags">
-                    <span class="flat-tag">{{ currencyLabel(group.currency) }}</span>
+                    <span class="flat-tag flat-tag--currency">{{ currencyLabel(group.currency) }}</span>
                   </div>
                 </td>
               </tr>
@@ -161,7 +161,7 @@
               <td class="numeric">{{ formatCurrency(item.current_total, item.currency) }}</td>
               <td>
                 <div class="inline-tags">
-                  <span class="flat-tag">{{ currencyLabel(item.currency) }}</span>
+                  <span class="flat-tag flat-tag--currency">{{ currencyLabel(item.currency) }}</span>
                 </div>
               </td>
             </tr>
@@ -189,6 +189,7 @@
             step="1"
             min="0"
             placeholder="150.00"
+            readonly
             @blur="handleRateBlur"
           />
         </label>
@@ -197,7 +198,9 @@
           :class="{ 'exchange-rate-hint--warning': needsRateReminder }"
         >
           {{
-            needsRateReminder
+            exchangeRateLoading
+              ? t("funds.exchangeRate.loading")
+              : needsRateReminder
               ? t("funds.exchangeRate.required")
               : t("funds.exchangeRate.helper")
           }}
@@ -586,7 +589,7 @@
               <td class="notes-cell">{{ record.notes || '-' }}</td>
               <td>
                 <div class="inline-tags">
-                  <span class="flat-tag">{{ currencyLabel(capitalCurrency(record)) }}</span>
+                    <span class="flat-tag flat-tag--currency">{{ currencyLabel(capitalCurrency(record)) }}</span>
                   <span
                     v-if="isFutureEffectiveDate(record.effective_date)"
                     class="flat-tag"
@@ -669,12 +672,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import PaginationControls from "./ui/PaginationControls.vue";
 import BaseDatePicker from "./ui/BaseDatePicker.vue";
 import { usePagination } from "@/composables/usePagination";
+import { getUsdJpyRate } from "@/services/api";
 import type {
   AggregatedFundSnapshot,
   Currency,
@@ -1030,7 +1034,29 @@ function roundRatio(value: number | null): number | null {
 }
 
 const BASE_CURRENCY: Currency = "JPY";
-const exchangeRateInput = ref<string | number>("150");
+const exchangeRateInput = ref<string | number>("");
+const exchangeRateLoading = ref(false);
+
+onMounted(() => {
+  void loadUsdJpyRate();
+});
+
+async function loadUsdJpyRate() {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return;
+  }
+
+  exchangeRateLoading.value = true;
+  try {
+    const rate = await getUsdJpyRate();
+    exchangeRateInput.value = rate.toFixed(2);
+    lastValidExchangeRate.value = rate;
+  } catch {
+    // Keep the field empty so the aggregate table clearly shows that JPY conversion is unavailable.
+  } finally {
+    exchangeRateLoading.value = false;
+  }
+}
 
 function normalizeRateInput(): string {
   const value = exchangeRateInput.value;
@@ -1069,7 +1095,7 @@ const needsExchangeRate = computed(() =>
 );
 
 const needsRateReminder = computed(
-  () => needsExchangeRate.value && !effectiveExchangeRate.value
+  () => needsExchangeRate.value && !effectiveExchangeRate.value && !exchangeRateLoading.value
 );
 
 const rateError = computed(() => {

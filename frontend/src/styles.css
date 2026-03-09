@@ -1,53 +1,56 @@
 :root {
-  --bg: #f4f7f2;
-  --bg-alt: #eef3ed;
-  --panel: #ffffff;
-  --panel-alt: #f8fbf7;
-  --panel-soft: #f1f6f0;
-  --grid-line: #dde7de;
-  --divider: #d9e3da;
-  --divider-bold: #becbbf;
-  --shadow-soft: 0 1px 2px rgba(22, 33, 26, 0.04);
-  --shadow-raised: 0 8px 24px -18px rgba(22, 33, 26, 0.12);
+  --bg: #ece6df;
+  --bg-alt: #e4ddd5;
+  --panel: #fcfaf6;
+  --panel-alt: #f5efe8;
+  --panel-soft: #eee7df;
+  --grid-line: #ddd2c6;
+  --divider: #d4c7ba;
+  --divider-bold: #bcae9f;
+  --shadow-soft: 0 1px 2px rgba(72, 63, 54, 0.03);
+  --shadow-raised: 0 10px 28px -22px rgba(72, 63, 54, 0.16);
   --radius-xl: 20px;
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 10px;
-  --text: #16211a;
-  --text-dim: #617164;
-  --text-faint: #93a198;
-  --accent: #1e9c5a;
-  --accent-strong: #127445;
-  --accent-soft: #dbf4e4;
-  --accent-nasa: #1a8651;
-  --accent-warm: #2db36a;
-  --accent-yellow: #d9b34b;
-  --accent-red: #d45454;
-  --accent-cyan: #32b77f;
-  --focus-ring: #38a86a;
-  --badge-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 249, 241, 0.96));
+  --text: #3e453d;
+  --text-dim: #716f68;
+  --text-faint: #9a968d;
+  --accent: #7f9483;
+  --accent-strong: #66796a;
+  --accent-soft: #e2e9e0;
+  --accent-nasa: #7c8f80;
+  --accent-warm: #b58a79;
+  --accent-yellow: #c0ab83;
+  --accent-red: #bb7b73;
+  --accent-cyan: #88a8a0;
+  --focus-ring: #94a793;
+  --badge-bg: linear-gradient(180deg, rgba(252, 250, 246, 0.98), rgba(245, 239, 232, 0.98));
   --transition: 150ms cubic-bezier(0.4, 0.2, 0.2, 1);
   font-family: "SF Pro Display", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "HarmonyOS Sans", "Microsoft Yahei", sans-serif;
   color-scheme: light;
 }
 
 [data-theme="dark"] {
-  --bg: #2e3237;
-  --bg-alt: #32373d;
-  --panel: #3a4046;
-  --panel-alt: #40474e;
-  --divider: #4a525a;
-  --divider-bold: #5a646e;
-  --text: #e6eaed;
-  --text-dim: #b3bcc3;
-  --text-faint: #7d868e;
-  --accent: #ff7a29;
-  --accent-warm: #ff9752;
-  --accent-cyan: #37c5de;
-  --accent-red: #ff6655;
-  --accent-yellow: #ffd26a;
-  --shadow-soft: 0 2px 5px -1px rgba(0, 0, 0, 0.45), 0 10px 22px -10px rgba(0, 0, 0, 0.55);
-  --shadow-raised: 0 18px 38px -16px rgba(0, 0, 0, 0.6);
+  --bg: #383733;
+  --bg-alt: #413f3a;
+  --panel: #47443f;
+  --panel-alt: #514d47;
+  --panel-soft: #5b554d;
+  --divider: #645d55;
+  --divider-bold: #7a7268;
+  --text: #ebe5dc;
+  --text-dim: #c7bfb3;
+  --text-faint: #9f968b;
+  --accent: #9db39d;
+  --accent-strong: #bdd0bb;
+  --accent-soft: rgba(157, 179, 157, 0.16);
+  --accent-warm: #c89b87;
+  --accent-cyan: #8db4ac;
+  --accent-red: #cf8d85;
+  --accent-yellow: #d0bb93;
+  --shadow-soft: 0 4px 14px -10px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 18px 38px -18px rgba(0, 0, 0, 0.52);
   color-scheme: dark;
 }
 
@@ -55,7 +58,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: linear-gradient(180deg, #f8faf7 0%, var(--bg) 100%);
+  background: linear-gradient(180deg, #f7f1eb 0%, var(--bg) 100%);
   color: var(--text);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -113,7 +116,7 @@ a {
 .app-header h1 {
   font-size: clamp(1.9rem, 3.5vw, 2.8rem);
   letter-spacing: -0.04em;
-  color: #1a271d;
+  color: var(--text);
   line-height: 0.96;
 }
 
@@ -179,17 +182,17 @@ a {
 
 .status-chip.healthy {
   color: var(--accent-cyan);
-  border-color: rgba(15, 167, 201, 0.4);
+  border-color: rgba(136, 168, 160, 0.42);
 }
 
 .status-chip.healthy .status-dot {
   background: var(--accent-cyan);
-  box-shadow: 0 0 0 4px rgba(15, 167, 201, 0.2);
+  box-shadow: 0 0 0 4px rgba(136, 168, 160, 0.18);
 }
 
 .status-chip.error {
   color: var(--accent-red);
-  border-color: rgba(225, 57, 45, 0.45);
+  border-color: rgba(187, 123, 115, 0.36);
 }
 
 .status-chip.unknown {
@@ -272,7 +275,7 @@ a {
 }
 
 .language-chip:hover {
-  color: var(--accent);
+  color: var(--accent-strong);
   transform: translateY(-1px);
 }
 
@@ -284,11 +287,11 @@ a {
 
 .language-chip:focus-visible {
   outline: 2px solid transparent;
-  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.24);
+  box-shadow: 0 0 0 3px rgba(148, 167, 147, 0.22);
 }
 
 .language-toggle:focus-within {
-  box-shadow: inset 0 0 0 1px rgba(15, 167, 201, 0.32), 0 0 0 3px rgba(11, 61, 145, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(127, 148, 131, 0.28), 0 0 0 3px rgba(148, 167, 147, 0.14);
 }
 
 .notification {
@@ -314,20 +317,20 @@ a {
 }
 
 .notification.success {
-  border-color: rgba(15, 167, 201, 0.45);
-  background: linear-gradient(180deg, rgba(15, 167, 201, 0.1), rgba(255, 255, 255, 0));
+  border-color: rgba(136, 168, 160, 0.35);
+  background: rgba(240, 247, 244, 0.96);
   color: var(--accent-cyan);
 }
 
 .notification.error {
-  border-color: rgba(225, 57, 45, 0.5);
-  background: linear-gradient(180deg, rgba(225, 57, 45, 0.12), rgba(255, 255, 255, 0));
+  border-color: rgba(187, 123, 115, 0.36);
+  background: rgba(250, 242, 240, 0.96);
   color: var(--accent-red);
 }
 
 .notification.info {
-  border-color: rgba(11, 61, 145, 0.4);
-  background: linear-gradient(180deg, rgba(11, 61, 145, 0.12), rgba(255, 255, 255, 0));
+  border-color: rgba(124, 143, 128, 0.34);
+  background: rgba(242, 245, 241, 0.96);
   color: var(--accent-nasa);
 }
 
@@ -410,7 +413,7 @@ a {
 }
 
 .tab-pill.is-active {
-  border-color: rgba(30, 156, 90, 0.22);
+  border-color: rgba(102, 121, 106, 0.2);
   background: var(--accent);
   color: #ffffff;
 }
@@ -536,19 +539,13 @@ select:focus,
 textarea:focus {
   outline: 2px solid transparent;
   border-color: var(--focus-ring);
-  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.18);
+  box-shadow: 0 0 0 3px rgba(148, 167, 147, 0.18);
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.1rem 1.35rem;
-}
-
-@media (max-width: 640px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .form-grid label {
@@ -572,32 +569,26 @@ textarea:focus {
 }
 
 .form-grid input,
+.form-grid select,
 .form-grid textarea {
   width: 100%;
-  background: #ffffff;
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-md);
-  padding: 0.88rem 1rem;
-  font-size: 0.95rem;
-  color: var(--text);
-  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
-}
-
-.form-grid input:hover,
-.form-grid textarea:hover {
-  border-color: rgba(30, 156, 90, 0.3);
-}
-
-.form-grid input:focus,
-.form-grid textarea:focus {
-  border-color: var(--focus-ring);
-  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.18);
 }
 
 .form-grid textarea {
   resize: vertical;
   min-height: 90px;
   line-height: 1.4;
+}
+
+.form-grid input:hover,
+.form-grid textarea:hover {
+  border-color: rgba(127, 148, 131, 0.3);
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px rgba(148, 167, 147, 0.18);
 }
 
 .form-actions {
@@ -620,57 +611,12 @@ textarea:focus {
   }
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.form-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  font-size: 0.86rem;
-  letter-spacing: 0.4px;
-  color: var(--text-dim);
-}
-
-.form-grid label span {
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.form-grid input,
-.form-grid select,
-.form-grid textarea {
-  width: 100%;
-}
-
-.form-grid textarea {
-  resize: vertical;
-}
-
-.form-grid .full {
-  grid-column: span 2;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.form-actions .primary-btn {
-  align-self: center;
-}
-
 @media (max-width: 768px) {
   .form-grid {
     grid-template-columns: 1fr;
   }
 
-  .form-grid .full {
+  .form-grid label.full {
     grid-column: span 1;
   }
 }
@@ -713,7 +659,7 @@ tbody tr:hover {
 .panel-headline h2 {
   font-size: clamp(1.25rem, 2vw, 1.55rem);
   letter-spacing: -0.03em;
-  color: #18231b;
+  color: var(--text);
 }
 
 .panel-header p,
@@ -1037,6 +983,7 @@ tbody tr:hover {
 .flat-tag {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 28px;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
@@ -1047,6 +994,12 @@ tbody tr:hover {
   font-weight: 600;
   white-space: nowrap;
   flex: 0 0 auto;
+}
+
+.flat-tag--currency {
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .flat-tag--buy {

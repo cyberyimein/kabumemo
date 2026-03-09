@@ -12,6 +12,29 @@
             <strong class="header-stat__value">{{ item.value }}</strong>
           </article>
         </div>
+        <section class="header-goal" :aria-label="t('app.goal.title')">
+          <div class="header-goal__meta">
+            <div>
+              <p class="header-goal__eyebrow">{{ t("app.goal.title") }}</p>
+              <h2 class="header-goal__value">{{ headerGoal.currentLabel }}</h2>
+            </div>
+            <div class="header-goal__stats">
+              <span>{{ t("app.goal.target", { amount: headerGoal.targetLabel }) }}</span>
+              <span v-if="headerGoal.rateLabel">{{ t("app.goal.rate", { rate: headerGoal.rateLabel }) }}</span>
+              <strong>{{ t("app.goal.progress", { percent: headerGoal.percentLabel }) }}</strong>
+            </div>
+          </div>
+          <div
+            class="header-goal__track"
+            role="progressbar"
+            :aria-valuemin="0"
+            :aria-valuemax="100"
+            :aria-valuenow="headerGoal.percentValue"
+          >
+            <div class="header-goal__fill" :style="{ width: `${headerGoal.percentValue}%` }"></div>
+          </div>
+          <p class="header-goal__caption">{{ headerGoal.caption }}</p>
+        </section>
       </div>
       <div class="header-controls">
         <div class="status-chip" :class="healthStatus.className">
@@ -63,7 +86,6 @@
         v-if="currentTab === 'transactions'"
         :transactions="state.transactions"
         :funding-groups="state.fundingGroups"
-        :fx-exchanges="state.fxExchanges"
         @create="handleCreateTransaction"
         @update="handleUpdateTransaction"
         @delete="handleDeleteTransaction"
@@ -144,6 +166,7 @@ import {
   getFundingGroups,
   getHealth,
   getPositions,
+  getUsdJpyRate,
   getQuotes,
   getStockSplits,
   refreshQuotes,
@@ -155,7 +178,6 @@ import type { LocaleCode } from "@/i18n";
 import type {
   AggregatedFundSnapshot,
   AnnualTaxSettlement,
-  Currency,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
   FxExchangeCreate,
@@ -174,24 +196,13 @@ import type {
 
 type TabId = "transactions" | "positions" | "funds" | "import" | "tax";
 
-type FxDraft = {
-  exchange_date: string;
-  from_currency: Currency;
-  to_currency: Currency;
-  from_amount: number;
-  to_amount: number;
-  rate: number;
-};
-
 type TransactionCreatePayload = {
   transaction: TransactionCreate;
-  fxDraft?: FxDraft | null;
 };
 
 type TransactionUpdateEvent = {
   id: string;
   data: TransactionUpdate;
-  fxDraft?: FxDraft | null;
   onDone: (success: boolean) => void;
 };
 
@@ -235,6 +246,8 @@ const state = reactive({
 
 const currentTab = ref<TabId>("transactions");
 const loading = ref(true);
+const USD_GOAL_TARGET = 100000;
+const usdJpyRate = ref<number | null>(null);
 const notification = ref<{
   type: "success" | "error" | "info";
   message: string;
@@ -297,9 +310,51 @@ const headerStats = computed(() => {
   ];
 });
 
-onMounted(async () => {
-  await Promise.all([refreshAllData(), loadHealth()]);
+const headerGoal = computed(() => {
+  const usdRow = state.fundSnapshots.aggregated.find((row) => row.currency === "USD");
+  const jpyRow = state.fundSnapshots.aggregated.find((row) => row.currency === "JPY");
+  const currentValue =
+    (usdRow?.current_total ?? 0) +
+    (usdJpyRate.value && usdJpyRate.value > 0 ? (jpyRow?.current_total ?? 0) / usdJpyRate.value : 0);
+  const percentRaw = USD_GOAL_TARGET > 0 ? (currentValue / USD_GOAL_TARGET) * 100 : 0;
+  const percentValue = Math.max(0, Math.min(100, Math.round(percentRaw * 10) / 10));
+  const rateLabel = usdJpyRate.value
+    ? new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(usdJpyRate.value)
+    : null;
+
+  return {
+    currentLabel: formatUsdCurrency(currentValue),
+    targetLabel: formatUsdCurrency(USD_GOAL_TARGET),
+    rateLabel,
+    percentLabel: new Intl.NumberFormat(locale.value, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(percentValue),
+    percentValue,
+    caption: rateLabel
+      ? t("app.goal.captionLive")
+      : t("app.goal.captionFallback"),
+  };
 });
+
+onMounted(async () => {
+  await Promise.all([refreshAllData(), loadHealth(), loadUsdJpyRate()]);
+});
+
+async function loadUsdJpyRate() {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return;
+  }
+
+  try {
+    usdJpyRate.value = await getUsdJpyRate();
+  } catch {
+    usdJpyRate.value = null;
+  }
+}
 
 async function refreshAllData(showToast = false) {
   try {
@@ -425,21 +480,23 @@ function asErrorMessage(error: unknown): string {
   return "发生未知错误";
 }
 
+function formatUsdCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 async function handleCreateTransaction(payload: TransactionCreatePayload) {
   try {
-    const created = await createTransaction(payload.transaction);
-    if (payload.fxDraft) {
-      await createFxExchange({
-        ...payload.fxDraft,
-        transaction_id: created.id,
-      });
-    }
+    await createTransaction(payload.transaction);
     showNotification("success", t("transactions.toasts.created"));
     await Promise.all([
       reloadTransactions(),
       reloadPositions(),
       reloadFunds(),
-      reloadFxExchanges(),
     ]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
@@ -449,18 +506,6 @@ async function handleCreateTransaction(payload: TransactionCreatePayload) {
 async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
   try {
     await updateTransaction(payload.id, payload.data);
-    const existingFx = state.fxExchanges.find((item) => item.transaction_id === payload.id);
-    if (payload.fxDraft) {
-      if (existingFx) {
-        await deleteFxExchange(existingFx.id);
-      }
-      await createFxExchange({
-        ...payload.fxDraft,
-        transaction_id: payload.id,
-      });
-    } else if (existingFx) {
-      await deleteFxExchange(existingFx.id);
-    }
     payload.onDone(true);
     showNotification("success", t("transactions.toasts.updated"));
   } catch (error: unknown) {
@@ -474,7 +519,6 @@ async function handleUpdateTransaction(payload: TransactionUpdateEvent) {
       reloadTransactions(),
       reloadPositions(),
       reloadFunds(),
-      reloadFxExchanges(),
     ]);
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
@@ -684,6 +728,72 @@ async function reloadAnnualTaxSettlements() {
   color: var(--text-dim);
 }
 
+.header-goal {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--divider);
+  background: var(--panel-alt);
+}
+
+.header-goal__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.header-goal__eyebrow {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.header-goal__value {
+  margin-top: 0.2rem;
+  font-size: clamp(1.2rem, 2vw, 1.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  color: var(--text);
+}
+
+.header-goal__stats {
+  display: grid;
+  gap: 0.2rem;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.header-goal__stats strong {
+  color: var(--accent-strong);
+  font-size: 0.98rem;
+}
+
+.header-goal__track {
+  width: 100%;
+  height: 0.8rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 55%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--divider));
+}
+
+.header-goal__fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-cyan) 100%);
+  transition: width var(--transition);
+}
+
+.header-goal__caption {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
 .notification strong {
   min-width: 2.5rem;
 }
@@ -691,5 +801,12 @@ async function reloadAnnualTaxSettlements() {
 .loading-state p {
   margin: 0;
   color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .header-goal__stats {
+    width: 100%;
+    text-align: left;
+  }
 }
 </style>
