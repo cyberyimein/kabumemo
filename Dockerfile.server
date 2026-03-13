@@ -1,4 +1,20 @@
 # syntax=docker/dockerfile:1
+FROM node:20-bookworm-slim AS frontend-build
+
+WORKDIR /frontend
+
+COPY frontend/package.json ./package.json
+COPY frontend/tsconfig.json ./tsconfig.json
+COPY frontend/tsconfig.node.json ./tsconfig.node.json
+COPY frontend/vite.config.ts ./vite.config.ts
+COPY frontend/index.html ./index.html
+COPY frontend/env.d.ts ./env.d.ts
+COPY frontend/public ./public
+COPY frontend/src ./src
+
+RUN npm install --no-audit --no-fund \
+    && npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,28 +24,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 安装基础构建工具（SQLite 已内置，这里主要为了将来扩展）
 RUN apt-get update \
     && apt-get install --no-install-recommends -y build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 拷贝后端代码（以 backend 目录为一个独立的 Python 项目）
 COPY backend/pyproject.toml backend/README.md ./backend/
 COPY backend/app ./backend/app
 COPY backend/scripts ./backend/scripts
 
 WORKDIR /app/backend
 
-# 安装后端依赖
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
-# 回到 /app 目录
 WORKDIR /app
 
-# 拷贝已经在宿主机构建好的前端 dist 目录
-# 注意：在构建镜像前，需要在宿主机（Windows）先在 frontend 目录运行 `npm run build`
-COPY frontend/dist /frontend_dist
+COPY --from=frontend-build /frontend/dist /frontend_dist
 
 EXPOSE 8000
 VOLUME ["/data"]

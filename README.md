@@ -12,9 +12,9 @@ Kabumemo is an offline-friendly trading journal powered by a **Vue 3 + Vite fron
 
 - **Frontend UI**: A tabbed dashboard (Trades, Positions, Funds, Tax) that lets you enter and review data directly in the browser.
 - **Backend API**: Handles storage and business validation for transactions, funding groups, tax settlement, and exposes a unified REST interface.
-- **Data storage**: JSON files are the primary source of truth, and every write is mirrored to a lightweight SQLite database (`kabumemo.db`) under `data/`, keeping human-editable backups and structured queries in sync.
+- **Data storage**: JSON files are the primary source of truth, and every write is mirrored to a lightweight SQLite database (`kabumemo.db`). By default the app uses `data/`, but in production you can point everything at a fixed host directory such as `/path/to/kabumemo-data`.
 
-The repository already includes a one-click startup batch script and end-to-end delete functionality for trades. The sections below provide a complete usage guide and feature overview.
+The repository includes cross-platform startup scripts for macOS/Linux plus the older Windows batch files. The sections below provide the current development and deployment workflow.
 
 ## Project Structure
 
@@ -36,7 +36,44 @@ Kabumemo/
 
 ## Quick Start
 
-### One-click script (Windows)
+### Quick start on macOS / Linux
+
+Make the shell scripts executable once:
+
+```bash
+chmod +x start_kabumemo.sh start_kabumemo_prod.sh
+```
+
+Start the development stack:
+
+```bash
+./start_kabumemo.sh
+```
+
+This script will:
+
+1. Create `backend/.venv` when missing.
+2. Install backend dependencies when missing.
+3. Install frontend dependencies when missing.
+4. Start the backend at `http://127.0.0.1:8000`.
+5. Start the frontend at `http://localhost:5173`.
+
+To preview the production-style single-server mode locally:
+
+```bash
+./start_kabumemo_prod.sh
+```
+
+This builds `frontend/dist` and starts FastAPI directly, serving both `/` and `/api` from port `8000`.
+
+If you need to pin the Python interpreter used to create `backend/.venv`, set `KABUMEMO_BASE_PY` first:
+
+```bash
+export KABUMEMO_BASE_PY="$(command -v python3)"
+./start_kabumemo.sh
+```
+
+### Windows compatibility
 
 Run `start_kabumemo.bat` from the repository root—double-click or launch it in a terminal—to automatically:
 
@@ -79,26 +116,26 @@ The scripts log which interpreter they detected, so you can confirm the correct 
 
 ```bash
 cd backend
-python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -e .
-./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 To override the data directory, set the `KABUCOUNT_DATA_DIR` environment variable:
 
 ```bash
-# Windows (cmd / PowerShell)
-set KABUCOUNT_DATA_DIR=D:\Kabumemo-data
-
-# macOS / Linux
-export KABUCOUNT_DATA_DIR="$HOME/kabumemo-data"
+export KABUCOUNT_DATA_DIR=/path/to/kabumemo-data
 ```
+
+On Windows, use `set KABUCOUNT_DATA_DIR=D:\Kabumemo-data` instead.
 
 Run tests:
 
 ```bash
 cd backend
-./.venv/Scripts/python.exe -m pytest
+source .venv/bin/activate
+python -m pytest
 ```
 
 ### Start the frontend manually
@@ -121,24 +158,41 @@ Default development endpoints:
 - Frontend: `http://localhost:5173`
 - Backend: `http://127.0.0.1:8000`
 
-## Docker deployment (macOS-friendly)
+## Docker deployment
 
-A `backend/Dockerfile` is now available for containerized runs. The image defaults to storing both JSON files and the SQLite database under `/data`, so bind-mount that directory to persist data outside the container (required on macOS because the container filesystem resets on restart).
-
-```bash
-cd backend
-docker build -t kabumemo-backend .
-docker run --rm -p 8000:8000 -v "$(pwd)/../data:/data" kabumemo-backend
-```
-
-To run the one-time JSON → SQLite import inside the container:
+Use the root-level `Dockerfile.server` when you want a single image that contains both the FastAPI backend and the compiled frontend. The image now builds the frontend during `docker build`, so the server can build directly from the repository without any Windows-only pre-build step.
 
 ```bash
-docker run --rm -it -v "$(pwd)/../data:/data" kabumemo-backend \
-  python scripts/import_json_to_sqlite.py --force
+docker build -t kabumemo-server -f Dockerfile.server .
+docker run -d \
+  --name kabumemo-server \
+  --restart unless-stopped \
+  -p 9527:8000 \
+  -e KABUCOUNT_DATA_DIR=/data \
+  -v /path/to/kabumemo-data:/data \
+  kabumemo-server
 ```
 
-The FastAPI server listens on `0.0.0.0:8000` inside the container; the `-p` flag exposes it to the macOS host. Mounting `../data` keeps `transactions.json`, `funding_groups.json`, `tax_settlements.json`, and `kabumemo.db` up to date across restarts.
+The real production data is stored on whichever host directory you mount into `/data`. That directory will hold `transactions.json`, `funding_groups.json`, `tax_settlements.json`, `capital_adjustments.json`, and `kabumemo.db` across rebuilds and container restarts.
+
+To run the one-time JSON -> SQLite import inside the container:
+
+```bash
+docker exec -it kabumemo-server \
+  python /app/backend/scripts/import_json_to_sqlite.py --data-dir /data --force
+```
+
+If you prefer Compose, `docker-compose.yml` already points to the same data directory and the same full image build:
+
+```bash
+cp .env.example .env
+# edit .env and set KABUMEMO_DATA_DIR to your local absolute path
+docker compose up -d --build
+```
+
+If your Docker installation does not provide the `docker compose` plugin, use `docker-compose up -d --build` instead.
+
+For the full deployment walkthrough, backup flow, and update commands, see `DEPLOY_MAC_SERVER.md`.
 
 ## Backend API Overview
 

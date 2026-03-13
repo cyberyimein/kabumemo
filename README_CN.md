@@ -12,9 +12,9 @@ Kabumemo 是一个可以离线使用的股票交易簿，采用 **Vue 3 + Vite �
 
 - **前端界面**：支持多标签页的仪表盘（交易、持仓、资金、纳税），可直接在浏览器完成录入与查询操作。
 - **后端 API**：负责存储与业务规则校验，包含交易、资金组、纳税等核心功能，并暴露统一的 REST 接口。
-- **数据存储**：JSON 文件是主数据源，所有写入会同时更新 `data/` 下的 JSON 与轻量级 SQLite 数据库 `kabumemo.db`，既保留可手动编辑的备份，也提供结构化查询能力。
+- **数据存储**：JSON 文件是主数据源，所有写入会同时更新 JSON 与轻量级 SQLite 数据库 `kabumemo.db`。默认使用仓库内的 `data/`，正式部署时可统一指向固定目录，例如 `/path/to/kabumemo-data`。
 
-仓库中已经集成「一键启动」批处理脚本与端到端删除交易功能，以下为完整的使用说明与能力概览。
+仓库中已经集成 macOS/Linux 启动脚本，并保留 Windows 批处理脚本作为兼容入口。以下为当前推荐的开发与部署说明。
 
 ## 目录结构
 
@@ -36,7 +36,44 @@ Kabumemo/
 
 ## 快速启动
 
-### 一键启动脚本（Windows）
+### macOS / Linux 快速启动
+
+首次执行前先赋予脚本权限：
+
+```bash
+chmod +x start_kabumemo.sh start_kabumemo_prod.sh
+```
+
+开发模式启动：
+
+```bash
+./start_kabumemo.sh
+```
+
+脚本会自动完成：
+
+1. 创建 `backend/.venv`。
+2. 安装后端依赖。
+3. 安装前端依赖。
+4. 启动后端 `http://127.0.0.1:8000`。
+5. 启动前端 `http://localhost:5173`。
+
+如需本机预演“部署版”单服务启动：
+
+```bash
+./start_kabumemo_prod.sh
+```
+
+它会先构建 `frontend/dist`，再用 FastAPI 同时提供 `/` 和 `/api`。
+
+如需指定创建虚拟环境时使用的 Python，可先设置：
+
+```bash
+export KABUMEMO_BASE_PY="$(command -v python3)"
+./start_kabumemo.sh
+```
+
+### Windows 兼容入口
 
 仓库根目录提供 `start_kabumemo.bat`，双击或在命令行执行即可自动完成：
 
@@ -62,25 +99,26 @@ Kabumemo/
 
 ```bash
 cd backend
-python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -e .
-./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 如需自定义数据目录，设置 `KABUCOUNT_DATA_DIR` 环境变量即可：
 
 ```bash
-set KABUCOUNT_DATA_DIR=D:\Kabumemo-data
-
-# macOS / Linux
-export KABUCOUNT_DATA_DIR="$HOME/kabumemo-data"
+export KABUCOUNT_DATA_DIR=/path/to/kabumemo-data
 ```
+
+Windows 下则使用 `set KABUCOUNT_DATA_DIR=D:\Kabumemo-data`。
 
 运行测试：
 
 ```bash
 cd backend
-./.venv/Scripts/python.exe -m pytest
+source .venv/bin/activate
+python -m pytest
 ```
 
 ### 手动启动前端
@@ -100,24 +138,41 @@ npm run lint    # 可选：运行 ESLint
 
 默认开发环境地址：前端 `http://localhost:5173`，后端 `http://127.0.0.1:8000`。
 
-## Docker 部署（macOS 适用）
+## Docker 部署
 
-`backend/Dockerfile` 已加入仓库，可直接构建后端镜像。镜像默认把 JSON 与 SQLite 数据库写入 `/data`，在 macOS 上请务必通过 bind mount 把本地 `data/` 挂载进去，这样容器重启后数据才会保留。
+正式部署请优先使用仓库根目录的 `Dockerfile.server`。它会在 `docker build` 过程中直接完成前端构建，因此服务器可以直接从仓库构建镜像，不再依赖 Windows 先打包前端。
 
 ```bash
-cd backend
-docker build -t kabumemo-backend .
-docker run --rm -p 8000:8000 -v "$(pwd)/../data:/data" kabumemo-backend
+docker build -t kabumemo-server -f Dockerfile.server .
+docker run -d \
+  --name kabumemo-server \
+  --restart unless-stopped \
+  -p 9527:8000 \
+  -e KABUCOUNT_DATA_DIR=/data \
+  -v /path/to/kabumemo-data:/data \
+  kabumemo-server
 ```
 
 若需在容器内执行一次性的 JSON → SQLite 导入，可运行：
 
 ```bash
-docker run --rm -it -v "$(pwd)/../data:/data" kabumemo-backend \
-  python scripts/import_json_to_sqlite.py --force
+docker exec -it kabumemo-server \
+  python /app/backend/scripts/import_json_to_sqlite.py --data-dir /data --force
 ```
 
-FastAPI 服务在容器内监听 `0.0.0.0:8000`，通过 `-p` 映射到宿主机。`../data` 挂载后，`transactions.json`、`funding_groups.json`、`tax_settlements.json` 与 `kabumemo.db` 会随容器同步更新。
+正式数据目录取决于你挂载到容器 `/data` 的宿主机目录。因此 `transactions.json`、`funding_groups.json`、`tax_settlements.json`、`capital_adjustments.json` 与 `kabumemo.db` 都会保留在你自己指定的目录里。
+
+如需使用 Compose，可直接执行：
+
+```bash
+cp .env.example .env
+# 编辑 .env，把 KABUMEMO_DATA_DIR 改成你自己的绝对路径
+docker compose up -d --build
+```
+
+如果当前环境没有 `docker compose` 插件，可改用 `docker-compose up -d --build`。
+
+完整的服务器部署、备份与更新流程见 `DEPLOY_MAC_SERVER.md`。
 
 ## 后端 API 速览
 
