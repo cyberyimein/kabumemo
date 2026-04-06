@@ -8,6 +8,8 @@ from ..models.schemas import (
     AnnualTaxSettlement,
     AnnualTaxSettlementCreate,
     AnnualTaxSettlementUpdate,
+    BatchDeleteTransactionsRequest,
+    BatchDeleteTransactionsResponse,
     BrokerImportApplyRequest,
     BrokerImportPreviewRequest,
     BrokerImportPreviewResponse,
@@ -31,6 +33,7 @@ from ..models.schemas import (
     StockSplitBase,
     StockSplitCreate,
     StockSplitRecord,
+    SuspiciousDuplicateResponse,
     TaxSettlementRecord,
     TaxSettlementRequest,
     TaxSettlementUpdate,
@@ -206,6 +209,32 @@ def delete_transaction(transaction_id: str) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/transactions/suspicious-duplicates",
+    response_model=SuspiciousDuplicateResponse,
+)
+def list_suspicious_transaction_duplicates() -> SuspiciousDuplicateResponse:
+    return repository.find_suspicious_duplicate_transactions()
+
+
+@router.post(
+    "/transactions/batch-delete",
+    response_model=BatchDeleteTransactionsResponse,
+)
+def batch_delete_transactions(
+    payload: BatchDeleteTransactionsRequest,
+) -> BatchDeleteTransactionsResponse:
+    try:
+        deleted_transaction_ids = repository.delete_transactions(payload.transaction_ids)
+        rebuild_and_persist_realized_pnl(repository)
+        return BatchDeleteTransactionsResponse(
+            deleted_count=len(deleted_transaction_ids),
+            deleted_transaction_ids=deleted_transaction_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.get("/realized-pnl", response_model=list[RealizedPnLRecord])
@@ -483,7 +512,14 @@ def delete_annual_tax_settlement(settlement_id: str) -> Response:
 def preview_broker_report_import(
     payload: BrokerImportPreviewRequest,
 ) -> BrokerImportPreviewResponse:
-    return preview_broker_import(payload)
+    preview = preview_broker_import(payload)
+    transactions = preview_items_to_transactions(preview.items)
+    applied_transactions, skipped_count = repository.preview_transactions_skip_duplicates(
+        transactions
+    )
+    preview.applied_count = len(applied_transactions)
+    preview.skipped_count = skipped_count
+    return preview
 
 
 @router.post("/imports/broker/apply", response_model=BrokerImportPreviewResponse)
@@ -498,13 +534,17 @@ def apply_broker_report_import(
         rebuild_and_persist_realized_pnl(repository, transactions)
         preview.applied_count = len(transactions)
         preview.skipped_count = 0
+        preview.applied_transaction_ids = [transaction.id for transaction in transactions]
         return preview
 
-    merged_transactions, applied_count, skipped_count = repository.merge_transactions_skip_duplicates(transactions)
-    if applied_count:
+    merged_transactions, applied_transactions, skipped_count = (
+        repository.merge_transactions_skip_duplicates(transactions)
+    )
+    if applied_transactions:
         rebuild_and_persist_realized_pnl(repository, merged_transactions)
-    preview.applied_count = applied_count
+    preview.applied_count = len(applied_transactions)
     preview.skipped_count = skipped_count
+    preview.applied_transaction_ids = [transaction.id for transaction in applied_transactions]
     if skipped_count:
         preview.warnings.append(f"Skipped {skipped_count} duplicate transactions")
     return preview

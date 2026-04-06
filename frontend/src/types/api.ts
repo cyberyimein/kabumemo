@@ -314,10 +314,33 @@ export interface BrokerImportPreviewResponse {
   warnings: string[];
   applied_count: number;
   skipped_count: number;
+  applied_transaction_ids: string[];
 }
 
 export interface BrokerImportApplyRequest extends BrokerImportPreviewRequest {
   replace_existing_transactions?: boolean;
+}
+
+export interface SuspiciousDuplicateGroup {
+  group_id: string;
+  reason: string;
+  transactions: Transaction[];
+  suggested_delete_ids: string[];
+}
+
+export interface SuspiciousDuplicateResponse {
+  groups: SuspiciousDuplicateGroup[];
+  duplicate_transaction_count: number;
+  suggested_delete_count: number;
+}
+
+export interface BatchDeleteTransactionsRequest {
+  transaction_ids: string[];
+}
+
+export interface BatchDeleteTransactionsResponse {
+  deleted_count: number;
+  deleted_transaction_ids: string[];
 }
 
 export interface HealthResponse {

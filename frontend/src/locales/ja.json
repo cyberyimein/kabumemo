@@ -484,11 +484,61 @@
     },
     "actions": {
       "preview": "プレビュー",
-      "apply": "高速取込"
+      "apply": "高速取込",
+      "clear": "選択をクリア",
+      "undo": "今回の取込を取り消す"
     },
+    "selectedFile": "{label}: {file}",
     "previewTitle": "取込プレビュー ({count})",
     "previewReady": "{count} 件のプレビューを生成しました。",
+    "previewSummary": "{count} 件のプレビューを生成しました。このまま取り込まれるのは {applied} 件、重複でスキップされるのは {skipped} 件です。",
     "applyDone": "{count} 件の取引を取り込み、{skipped} 件の重複をスキップしました。",
+    "undo": {
+      "title": "直前の取込を取り消す",
+      "description": "誤って取り込んだ場合は、直前に追加した {count} 件の取引をまとめて削除できます。",
+      "confirm": "直前の取込で追加した {count} 件の取引を削除しますか？",
+      "done": "取込済みの {count} 件を削除しました。",
+      "errors": {
+        "undo": "直前の取込を取り消せませんでした。"
+      }
+    },
+    "duplicates": {
+      "title": "重複候補の確認",
+      "description": "既存取引から一致度の高い重複候補を抽出し、確認後にまとめて削除できます。",
+      "idle": "スキャンを実行すると、重複候補を確認できます。",
+      "empty": "疑わしい重複グループは見つかりませんでした。",
+      "reason": "主要な取引項目が一致しており、重複取込の可能性があります。",
+      "summary": "{groups} グループ・{transactions} 件の重複候補を検出しました。{suggested} 件を削除候補として選択済みです。",
+      "groupTitle": "{symbol} · {date} · {count} 件",
+      "suggestedDelete": "削除候補",
+      "keepCandidate": "残す候補",
+      "confirmDelete": "選択した {count} 件の重複候補を削除しますか？",
+      "deleted": "{count} 件の重複候補を削除しました。",
+      "actions": {
+        "scan": "重複をスキャン",
+        "selectSuggested": "候補をすべて選択",
+        "selectSuggestedGroup": "このグループの候補を選択",
+        "clearSelection": "選択を解除",
+        "deleteSelected": "選択を削除 ({count})"
+      },
+      "table": {
+        "select": "選択",
+        "date": "日付",
+        "symbol": "銘柄",
+        "market": "市場",
+        "quantity": "数量",
+        "tradeAmount": "約定金額",
+        "settlementAmount": "受渡金額",
+        "fundingGroup": "資金グループ",
+        "accountType": "口座区分",
+        "taxed": "納税",
+        "status": "判定"
+      },
+      "errors": {
+        "scan": "重複候補をスキャンできませんでした。",
+        "delete": "選択した重複候補を削除できませんでした。"
+      }
+    },
     "table": {
       "date": "日付",
       "symbol": "銘柄",

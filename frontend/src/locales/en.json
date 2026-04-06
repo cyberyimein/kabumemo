@@ -484,11 +484,61 @@
     },
     "actions": {
       "preview": "Preview Import",
-      "apply": "Quick Import"
+      "apply": "Quick Import",
+      "clear": "Clear Selection",
+      "undo": "Undo This Import"
     },
+    "selectedFile": "{label}: {file}",
     "previewTitle": "Import Preview ({count})",
     "previewReady": "Generated {count} preview rows.",
+    "previewSummary": "Generated {count} preview rows. {applied} would be imported and {skipped} would be skipped as duplicates.",
     "applyDone": "Imported {count} trades and skipped {skipped} duplicates.",
+    "undo": {
+      "title": "Undo latest import",
+      "description": "Delete the {count} trades that were just imported if this batch was a mistake.",
+      "confirm": "Delete the {count} trades added by the latest import?",
+      "done": "Removed {count} imported trades.",
+      "errors": {
+        "undo": "Unable to undo the latest import."
+      }
+    },
+    "duplicates": {
+      "title": "Suspicious duplicate review",
+      "description": "Scan existing trades for exact-match duplicate groups before deleting anything in bulk.",
+      "idle": "Run a scan to review suspicious duplicates.",
+      "empty": "No suspicious duplicate groups found.",
+      "reason": "These rows match on the main trade fields and look like repeated imports.",
+      "summary": "Found {groups} duplicate groups covering {transactions} records. {suggested} records are preselected for deletion.",
+      "groupTitle": "{symbol} · {date} · {count} records",
+      "suggestedDelete": "Suggested delete",
+      "keepCandidate": "Keep candidate",
+      "confirmDelete": "Delete the selected {count} suspicious duplicate trades?",
+      "deleted": "Deleted {count} suspicious duplicate trades.",
+      "actions": {
+        "scan": "Scan duplicates",
+        "selectSuggested": "Select all suggested",
+        "selectSuggestedGroup": "Select group suggestions",
+        "clearSelection": "Clear selection",
+        "deleteSelected": "Delete selected ({count})"
+      },
+      "table": {
+        "select": "Select",
+        "date": "Date",
+        "symbol": "Symbol",
+        "market": "Market",
+        "quantity": "Quantity",
+        "tradeAmount": "Trade Amount",
+        "settlementAmount": "Settlement Amount",
+        "fundingGroup": "Funding Group",
+        "accountType": "Account Type",
+        "taxed": "Taxed",
+        "status": "Review"
+      },
+      "errors": {
+        "scan": "Unable to scan suspicious duplicates.",
+        "delete": "Unable to delete the selected duplicates."
+      }
+    },
     "table": {
       "date": "Date",
       "symbol": "Symbol",

@@ -661,7 +661,6 @@ async function handleDeleteFxExchange(id: string) {
 async function handleImportedTransactions() {
   try {
     await Promise.all([reloadTransactions(), reloadPositions(), reloadFunds()]);
-    showNotification("success", t("imports.applyDone", { count: state.transactions.length }));
   } catch (error: unknown) {
     showNotification("error", asErrorMessage(error));
   }

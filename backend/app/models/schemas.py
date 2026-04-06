@@ -459,10 +459,33 @@ class BrokerImportPreviewResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     applied_count: int = 0
     skipped_count: int = 0
+    applied_transaction_ids: list[str] = Field(default_factory=list)
 
 
 class BrokerImportApplyRequest(BrokerImportPreviewRequest):
     replace_existing_transactions: bool = False
+
+
+class SuspiciousDuplicateGroup(BaseModel):
+    group_id: str
+    reason: str
+    transactions: list[Transaction]
+    suggested_delete_ids: list[str] = Field(default_factory=list)
+
+
+class SuspiciousDuplicateResponse(BaseModel):
+    groups: list[SuspiciousDuplicateGroup] = Field(default_factory=list)
+    duplicate_transaction_count: int = 0
+    suggested_delete_count: int = 0
+
+
+class BatchDeleteTransactionsRequest(BaseModel):
+    transaction_ids: list[str] = Field(..., min_length=1)
+
+
+class BatchDeleteTransactionsResponse(BaseModel):
+    deleted_count: int
+    deleted_transaction_ids: list[str] = Field(default_factory=list)
 
 
 class RoundTripYieldRequest(BaseModel):

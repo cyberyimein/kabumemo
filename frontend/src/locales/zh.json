@@ -484,11 +484,61 @@
     },
     "actions": {
       "preview": "预览导入",
-      "apply": "快速导入"
+      "apply": "快速导入",
+      "clear": "清空已选内容",
+      "undo": "撤销本次导入"
     },
+    "selectedFile": "{label}：{file}",
     "previewTitle": "导入预览 ({count})",
     "previewReady": "已生成 {count} 条导入预览。",
+    "previewSummary": "已生成 {count} 条导入预览；其中预计导入 {applied} 条，预计因重复跳过 {skipped} 条。",
     "applyDone": "已导入 {count} 条交易，跳过 {skipped} 条重复记录。",
+    "undo": {
+      "title": "撤销最近一次导入",
+      "description": "如果这批导入有误，可以一键删除刚刚新增的 {count} 条交易。",
+      "confirm": "确定删除最近一次导入新增的 {count} 条交易吗？",
+      "done": "已删除最近导入的 {count} 条交易。",
+      "errors": {
+        "undo": "无法撤销最近一次导入。"
+      }
+    },
+    "duplicates": {
+      "title": "可疑重复数据检查",
+      "description": "扫描现有交易中的高置信度重复组，确认后再批量删除。",
+      "idle": "点击扫描后查看可疑重复数据。",
+      "empty": "没有发现可疑的重复分组。",
+      "reason": "这些记录的核心交易字段完全一致，很像重复导入造成的数据。",
+      "summary": "共发现 {groups} 组可疑重复，涉及 {transactions} 条记录；已预选 {suggested} 条待删除记录。",
+      "groupTitle": "{symbol} · {date} · {count} 条记录",
+      "suggestedDelete": "建议删除",
+      "keepCandidate": "建议保留",
+      "confirmDelete": "确定删除选中的 {count} 条可疑重复交易吗？",
+      "deleted": "已删除 {count} 条可疑重复交易。",
+      "actions": {
+        "scan": "扫描重复数据",
+        "selectSuggested": "选择全部建议项",
+        "selectSuggestedGroup": "选择本组建议项",
+        "clearSelection": "清空选择",
+        "deleteSelected": "删除所选 ({count})"
+      },
+      "table": {
+        "select": "选择",
+        "date": "日期",
+        "symbol": "代码",
+        "market": "市场",
+        "quantity": "数量",
+        "tradeAmount": "成交金额",
+        "settlementAmount": "结算金额",
+        "fundingGroup": "资金组",
+        "accountType": "账户类型",
+        "taxed": "纳税状态",
+        "status": "处理建议"
+      },
+      "errors": {
+        "scan": "无法扫描可疑重复数据。",
+        "delete": "无法删除选中的重复数据。"
+      }
+    },
     "table": {
       "date": "日期",
       "symbol": "代码",

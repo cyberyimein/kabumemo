@@ -2,12 +2,13 @@ import type {
   AnnualTaxSettlement,
   AnnualTaxSettlementCreate,
   AnnualTaxSettlementUpdate,
+  BatchDeleteTransactionsRequest,
+  BatchDeleteTransactionsResponse,
   BrokerImportApplyRequest,
   BrokerImportPreviewResponse,
   BrokerImportPreviewRequest,
   FxExchangeCreate,
   FxExchangeRecord,
-  FundSnapshot,
   FundSnapshotsResponse,
   FundingCapitalAdjustment,
   FundingCapitalAdjustmentRequest,
@@ -21,6 +22,7 @@ import type {
   RoundTripYieldResponse,
   StockSplit,
   StockSplitPayload,
+  SuspiciousDuplicateResponse,
   TaxSettlementRecord,
   TaxSettlementRequest,
   TaxSettlementUpdate,
@@ -65,7 +67,7 @@ async function safeParseError(response: Response): Promise<string> {
     return typeof payload.detail === "string"
       ? payload.detail
       : JSON.stringify(payload);
-  } catch (err) {
+  } catch {
     return response.statusText || "请求失败";
   }
 }
@@ -99,6 +101,19 @@ export function updateTransaction(
 export function deleteTransaction(id: string): Promise<void> {
   return request<void>(`/transactions/${encodeURIComponent(id)}`, {
     method: "DELETE"
+  });
+}
+
+export function getSuspiciousDuplicateTransactions(): Promise<SuspiciousDuplicateResponse> {
+  return request<SuspiciousDuplicateResponse>("/transactions/suspicious-duplicates");
+}
+
+export function deleteTransactionsBatch(
+  payload: BatchDeleteTransactionsRequest
+): Promise<BatchDeleteTransactionsResponse> {
+  return request<BatchDeleteTransactionsResponse>("/transactions/batch-delete", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

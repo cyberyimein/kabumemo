@@ -466,6 +466,169 @@ def test_broker_import_same_day_buy_is_sorted_before_sell(client: TestClient):
     assert realized_records[0]["unmatched_quantity"] == pytest.approx(0)
 
 
+def test_broker_import_skips_existing_duplicates_even_when_source_file_changes(
+    client: TestClient,
+):
+    import base64
+
+    us_csv = """
+約定履歴
+
+国内約定日,銘柄,銘柄コード,市場,商品区分,注文種別,取引,預り区分,約定数量,約定単価,国内受渡日,受渡金額/決済損益
+2025/08/28,シャオペン ADR,XPEV,NYSE,米国株式,指値,現買,NISA,10,22.6550USD,2025/09/01,226.55USD
+""".strip()
+
+    first_payload = {
+        "us_report": {
+            "file_name": "us-monthly.csv",
+            "content_base64": base64.b64encode(us_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        }
+    }
+    first_apply = client.post("/api/imports/broker/apply", json=first_payload)
+    assert first_apply.status_code == 200, first_apply.text
+    first_body = first_apply.json()
+    assert first_body["applied_count"] == 1
+    assert first_body["skipped_count"] == 0
+    assert len(first_body["applied_transaction_ids"]) == 1
+
+    second_payload = {
+        "us_report": {
+            "file_name": "us-annual.csv",
+            "content_base64": base64.b64encode(us_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        }
+    }
+    second_apply = client.post("/api/imports/broker/apply", json=second_payload)
+    assert second_apply.status_code == 200, second_apply.text
+    second_body = second_apply.json()
+    assert second_body["applied_count"] == 0
+    assert second_body["skipped_count"] == 1
+    assert second_body["applied_transaction_ids"] == []
+    assert "Skipped 1 duplicate transactions" in second_body["warnings"]
+
+    transactions = client.get("/api/transactions").json()
+    assert len(transactions) == 1
+
+
+def test_domestic_broker_import_skips_existing_duplicates_even_when_source_file_changes(
+    client: TestClient,
+):
+    import base64
+
+    domestic_csv = """
+約定履歴照会
+
+約定日,銘柄,銘柄コード,市場,取引,期限,預り,課税,約定数量,約定単価,手数料/諸経費等,税額,受渡日,受渡金額/決済損益
+2025/07/15,ＮＴＴ,9432,東証,株式現物買,--, 特定 ,--,500,150.2,--,--,2025/07/17,75100
+""".strip()
+
+    first_payload = {
+        "domestic_report": {
+            "file_name": "domestic-july.csv",
+            "content_base64": base64.b64encode(domestic_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        }
+    }
+    first_apply = client.post("/api/imports/broker/apply", json=first_payload)
+    assert first_apply.status_code == 200, first_apply.text
+    assert first_apply.json()["applied_count"] == 1
+
+    second_payload = {
+        "domestic_report": {
+            "file_name": "domestic-archive.csv",
+            "content_base64": base64.b64encode(domestic_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        }
+    }
+    second_apply = client.post("/api/imports/broker/apply", json=second_payload)
+    assert second_apply.status_code == 200, second_apply.text
+    assert second_apply.json()["applied_count"] == 0
+    assert second_apply.json()["skipped_count"] == 1
+
+    transactions = client.get("/api/transactions").json()
+    assert len(transactions) == 1
+
+
+def test_broker_import_preview_reports_duplicates_that_would_be_skipped(client: TestClient):
+    import base64
+
+    domestic_csv = """
+約定履歴照会
+
+約定日,銘柄,銘柄コード,市場,取引,期限,預り,課税,約定数量,約定単価,手数料/諸経費等,税額,受渡日,受渡金額/決済損益
+2025/07/15,ＮＴＴ,9432,東証,株式現物買,--, 特定 ,--,500,150.2,--,--,2025/07/17,75100
+2025/07/15,ＮＴＴ,9432,東証,株式現物買,--, 特定 ,--,500,150.2,--,--,2025/07/17,75100
+""".strip()
+
+    payload = {
+        "domestic_report": {
+            "file_name": "domestic-duplicate.csv",
+            "content_base64": base64.b64encode(domestic_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        }
+    }
+
+    preview_resp = client.post("/api/imports/broker/preview", json=payload)
+    assert preview_resp.status_code == 200, preview_resp.text
+    preview_body = preview_resp.json()
+    assert len(preview_body["items"]) == 2
+    assert preview_body["applied_count"] == 1
+    assert preview_body["skipped_count"] == 1
+
+    apply_resp = client.post("/api/imports/broker/apply", json=payload)
+    assert apply_resp.status_code == 200, apply_resp.text
+    apply_body = apply_resp.json()
+    assert apply_body["applied_count"] == 1
+    assert apply_body["skipped_count"] == 1
+
+    transactions = client.get("/api/transactions").json()
+    assert len(transactions) == 1
+
+
+def test_suspicious_duplicate_review_and_batch_delete(client: TestClient):
+    payload = {
+        "trade_date": "2025-09-01",
+        "symbol": "7203.T",
+        "quantity": 10,
+        "gross_amount": 150000,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+        "memo": "duplicate import",
+    }
+
+    first_resp = client.post("/api/transactions", json=payload)
+    second_resp = client.post("/api/transactions", json=payload)
+    assert first_resp.status_code == 201, first_resp.text
+    assert second_resp.status_code == 201, second_resp.text
+
+    duplicates_resp = client.get("/api/transactions/suspicious-duplicates")
+    assert duplicates_resp.status_code == 200, duplicates_resp.text
+    body = duplicates_resp.json()
+    assert body["duplicate_transaction_count"] == 2
+    assert body["suggested_delete_count"] == 1
+    assert len(body["groups"]) == 1
+    group = body["groups"][0]
+    assert len(group["transactions"]) == 2
+    assert len(group["suggested_delete_ids"]) == 1
+
+    delete_resp = client.post(
+        "/api/transactions/batch-delete",
+        json={"transaction_ids": group["suggested_delete_ids"]},
+    )
+    assert delete_resp.status_code == 200, delete_resp.text
+    assert delete_resp.json()["deleted_count"] == 1
+
+    remaining_transactions = client.get("/api/transactions").json()
+    assert len(remaining_transactions) == 1
+
+    post_delete_duplicates = client.get("/api/transactions/suspicious-duplicates").json()
+    assert post_delete_duplicates["groups"] == []
+    assert post_delete_duplicates["duplicate_transaction_count"] == 0
+    assert post_delete_duplicates["suggested_delete_count"] == 0
+
+
 def test_stock_split_endpoint_rebuilds_positions_and_realized_pnl(client: TestClient):
     buy_payload = {
         "trade_date": "2025-12-22",
