@@ -158,39 +158,31 @@ Default development endpoints:
 - Frontend: `http://localhost:5173`
 - Backend: `http://127.0.0.1:8000`
 
-## Docker deployment
+## Apple Container deployment
 
-Use the root-level `Dockerfile.server` when you want a single image that contains both the FastAPI backend and the compiled frontend. The image now builds the frontend during `docker build`, so the server can build directly from the repository without any Windows-only pre-build step.
+The macOS production environment uses Apple Container CLI. The root-level `Dockerfile.server` is a standard OCI build file that compiles the frontend and packages the backend into one image. Docker Desktop, Compose, and Colima are not required.
 
 ```bash
-docker build -t kabumemo-server -f Dockerfile.server .
-docker run -d \
-  --name kabumemo-server \
-  --restart unless-stopped \
-  -p 9527:8000 \
-  -e KABUCOUNT_DATA_DIR=/data \
-  -v /path/to/kabumemo-data:/data \
-  kabumemo-server
+container build -t local/kabumemo-backend:latest -f Dockerfile.server .
+container stop kabumemo-backend 2>/dev/null || true
+container delete kabumemo-backend 2>/dev/null || true
+container run --detach \
+  --name kabumemo-backend \
+  --publish 0.0.0.0:9527:8000 \
+  --env KABUCOUNT_DATA_DIR=/data \
+  --env KABUMEMO_DIST_DIR=/frontend_dist \
+  --volume /Users/mithridates/data/kabumemo:/data \
+  local/kabumemo-backend:latest
 ```
 
-The real production data is stored on whichever host directory you mount into `/data`. That directory will hold `transactions.json`, `funding_groups.json`, `tax_settlements.json`, `capital_adjustments.json`, and `kabumemo.db` across rebuilds and container restarts.
+Production data is stored in `/Users/mithridates/data/kabumemo`, mounted at `/data` in the container. Its JSON files and `kabumemo.db` survive image rebuilds and container replacement.
 
 To run the one-time JSON -> SQLite import inside the container:
 
 ```bash
-docker exec -it kabumemo-server \
+container exec kabumemo-backend \
   python /app/backend/scripts/import_json_to_sqlite.py --data-dir /data --force
 ```
-
-If you prefer Compose, `docker-compose.yml` already points to the same data directory and the same full image build:
-
-```bash
-cp .env.example .env
-# edit .env and set KABUMEMO_DATA_DIR to your local absolute path
-docker compose up -d --build
-```
-
-If your Docker installation does not provide the `docker compose` plugin, use `docker-compose up -d --build` instead.
 
 For the full deployment walkthrough, backup flow, and update commands, see `DEPLOY_MAC_SERVER.md`.
 

@@ -138,39 +138,31 @@ npm run lint    # 可选：运行 ESLint
 
 默认开发环境地址：前端 `http://localhost:5173`，后端 `http://127.0.0.1:8000`。
 
-## Docker 部署
+## Apple Container 部署
 
-正式部署请优先使用仓库根目录的 `Dockerfile.server`。它会在 `docker build` 过程中直接完成前端构建，因此服务器可以直接从仓库构建镜像，不再依赖 Windows 先打包前端。
+macOS 正式环境使用 Apple Container CLI。根目录的 `Dockerfile.server` 是标准 OCI 构建文件，会在镜像构建过程中完成前端构建并打包后端；不需要 Docker Desktop、Compose 或 Colima。
 
 ```bash
-docker build -t kabumemo-server -f Dockerfile.server .
-docker run -d \
-  --name kabumemo-server \
-  --restart unless-stopped \
-  -p 9527:8000 \
-  -e KABUCOUNT_DATA_DIR=/data \
-  -v /path/to/kabumemo-data:/data \
-  kabumemo-server
+container build -t local/kabumemo-backend:latest -f Dockerfile.server .
+container stop kabumemo-backend 2>/dev/null || true
+container delete kabumemo-backend 2>/dev/null || true
+container run --detach \
+  --name kabumemo-backend \
+  --publish 0.0.0.0:9527:8000 \
+  --env KABUCOUNT_DATA_DIR=/data \
+  --env KABUMEMO_DIST_DIR=/frontend_dist \
+  --volume /Users/mithridates/data/kabumemo:/data \
+  local/kabumemo-backend:latest
 ```
 
 若需在容器内执行一次性的 JSON → SQLite 导入，可运行：
 
 ```bash
-docker exec -it kabumemo-server \
+container exec kabumemo-backend \
   python /app/backend/scripts/import_json_to_sqlite.py --data-dir /data --force
 ```
 
-正式数据目录取决于你挂载到容器 `/data` 的宿主机目录。因此 `transactions.json`、`funding_groups.json`、`tax_settlements.json`、`capital_adjustments.json` 与 `kabumemo.db` 都会保留在你自己指定的目录里。
-
-如需使用 Compose，可直接执行：
-
-```bash
-cp .env.example .env
-# 编辑 .env，把 KABUMEMO_DATA_DIR 改成你自己的绝对路径
-docker compose up -d --build
-```
-
-如果当前环境没有 `docker compose` 插件，可改用 `docker-compose up -d --build`。
+正式数据位于 `/Users/mithridates/data/kabumemo`，挂载到容器 `/data`。其中的 JSON 文件和 `kabumemo.db` 会在容器升级后继续保留。
 
 完整的服务器部署、备份与更新流程见 `DEPLOY_MAC_SERVER.md`。
 
