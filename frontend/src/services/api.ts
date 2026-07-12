@@ -7,6 +7,9 @@ import type {
   BrokerImportApplyRequest,
   BrokerImportPreviewResponse,
   BrokerImportPreviewRequest,
+  BrokerImportUndoRequest,
+  BrokerImportUndoResponse,
+  CashActivity,
   FxExchangeCreate,
   FxExchangeRecord,
   FundSnapshotsResponse,
@@ -21,6 +24,7 @@ import type {
   RoundTripYieldRequest,
   RoundTripYieldResponse,
   StockSplit,
+  StockSplitDetectionResponse,
   StockSplitPayload,
   SuspiciousDuplicateResponse,
   TaxSettlementRecord,
@@ -235,6 +239,10 @@ export function createStockSplit(payload: StockSplitPayload): Promise<StockSplit
   });
 }
 
+export function detectStockSplits(): Promise<StockSplitDetectionResponse> {
+  return request<StockSplitDetectionResponse>("/stock-splits/detect", { method: "POST" });
+}
+
 export function deleteStockSplit(id: string): Promise<void> {
   return request<void>(`/stock-splits/${encodeURIComponent(id)}`, {
     method: "DELETE"
@@ -332,6 +340,19 @@ export function applyBrokerImport(
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function undoBrokerImport(
+  payload: BrokerImportUndoRequest
+): Promise<BrokerImportUndoResponse> {
+  return request<BrokerImportUndoResponse>("/imports/broker/undo", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getCashActivities(): Promise<CashActivity[]> {
+  return request<CashActivity[]>("/cash-activities");
 }
 
 export { ApiError };

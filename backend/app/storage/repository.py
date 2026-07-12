@@ -14,6 +14,7 @@ from ..models.schemas import (
     AnnualTaxSettlementCreate,
     AnnualTaxSettlementUpdate,
     BrokerAccountType,
+    CashActivity,
     Currency,
     FxExchangeCreate,
     FxExchangeRecord,
@@ -123,6 +124,7 @@ class LocalDataRepository:
         self._stock_splits_path = self.base_path / "stock_splits.json"
         self._fx_exchanges_path = self.base_path / "fx_exchanges.json"
         self._quotes_path = self.base_path / "quotes.json"
+        self._cash_activities_path = self.base_path / "cash_activities.json"
         for path in (
             self._transactions_path,
             self._funding_groups_path,
@@ -133,6 +135,7 @@ class LocalDataRepository:
             self._stock_splits_path,
             self._fx_exchanges_path,
             self._quotes_path,
+            self._cash_activities_path,
         ):
             if not path.exists():
                 path.write_text("[]", encoding="utf-8")
@@ -152,6 +155,7 @@ class LocalDataRepository:
         realized_pnl_records = self.list_realized_pnl_records()
         fx_exchanges = self.list_fx_exchanges()
         quotes = self.list_quotes()
+        cash_activities = self.list_cash_activities()
         self.sqlite.replace_transactions(transactions)
         self.sqlite.replace_funding_groups(groups)
         self.sqlite.replace_tax_settlements(settlements)
@@ -161,6 +165,7 @@ class LocalDataRepository:
         self.sqlite.replace_stock_splits(stock_splits)
         self.sqlite.replace_fx_exchanges(fx_exchanges)
         self.sqlite.replace_quotes(quotes)
+        self.sqlite.replace_cash_activities(cash_activities)
 
     def sync_sqlite_from_json(self) -> None:
         """Public helper to mirror JSON source data into SQLite."""
@@ -268,6 +273,68 @@ class LocalDataRepository:
             self.sqlite.replace_transactions,
             lambda payload: Transaction(**payload),
         )
+
+    # Cash activities --------------------------------------------------------------
+    def list_cash_activities(self) -> list[CashActivity]:
+        payload = json.loads(self._cash_activities_path.read_text(encoding="utf-8") or "[]")
+        return [CashActivity(**item) for item in payload]
+
+    def list_cash_activities_from_sqlite(self) -> list[CashActivity]:
+        return self.sqlite.load_cash_activities()
+
+    def replace_cash_activities(self, activities: Iterable[CashActivity]) -> None:
+        self._write_with_mirror(
+            self._cash_activities_path,
+            activities,
+            lambda item: item.model_dump(mode="json"),
+            self.sqlite.replace_cash_activities,
+            lambda payload: CashActivity(**payload),
+        )
+
+    def _resolve_cash_activity_merge(
+        self, activities: Iterable[CashActivity]
+    ) -> tuple[list[CashActivity], list[CashActivity], int]:
+        existing = self.list_cash_activities()
+        seen = {item.id for item in existing}
+        merged = list(existing)
+        applied: list[CashActivity] = []
+        skipped = 0
+        for item in activities:
+            if item.id in seen:
+                skipped += 1
+                continue
+            merged.append(item)
+            applied.append(item)
+            seen.add(item.id)
+        return merged, applied, skipped
+
+    def preview_cash_activities_skip_duplicates(
+        self, activities: Iterable[CashActivity]
+    ) -> tuple[list[CashActivity], int]:
+        _, applied, skipped = self._resolve_cash_activity_merge(activities)
+        return applied, skipped
+
+    def merge_cash_activities_skip_duplicates(
+        self, activities: Iterable[CashActivity]
+    ) -> tuple[list[CashActivity], int]:
+        merged, applied, skipped = self._resolve_cash_activity_merge(activities)
+        if applied:
+            self.replace_cash_activities(merged)
+        return applied, skipped
+
+    def delete_cash_activities(self, activity_ids: Iterable[str]) -> list[str]:
+        requested = list(dict.fromkeys(activity_ids))
+        requested_set = set(requested)
+        existing = self.list_cash_activities()
+        existing_ids = {item.id for item in existing}
+        missing = [item_id for item_id in requested if item_id not in existing_ids]
+        if missing:
+            raise ValueError(f"Cash activity {missing[0]} not found")
+        if requested:
+            self.replace_cash_activities(
+                item for item in existing if item.id not in requested_set
+            )
+        return requested
 
     # Funding groups ----------------------------------------------------------------
     def list_funding_groups(self) -> List[FundingGroup]:

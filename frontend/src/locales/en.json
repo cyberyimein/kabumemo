@@ -1,8 +1,8 @@
 {
   "app": {
     "header": {
-  "title": "A Stock Trading Recorder",
-      "tagline": "Manage trades, positions, funds, and taxes locally."
+  "title": "Kabumemo",
+      "tagline": "A local investment ledger powered by broker reports."
     },
     "language": {
       "label": "Interface Language"
@@ -39,6 +39,7 @@
         "fx": "FX Entries",
         "fxMeta": "Standalone exchange records",
         "tax": "Pending Tax",
+        "cash": "Cash activity",
         "taxMeta": "Non-NISA sells"
       }
     },
@@ -55,7 +56,7 @@
     "transactions": "Trades",
     "positions": "Positions",
     "funds": "Funds",
-    "import": "Import",
+    "import": "Reports",
     "tax": "Tax"
   },
   "common": {
@@ -141,13 +142,15 @@
     },
   "submit": "Submit Transaction",
   "update": "Save Changes",
-  "editingHint": "Editing existing trade. Save to apply changes or cancel to go back to quick entry.",
+    "editingHint": "Editing existing trade. Save to apply changes or cancel to go back to quick entry.",
+    "manual": { "open": "Manual entry", "close": "Hide entry", "hint": "Use only to correct missing or exceptional broker-report trades" },
     "historyTitle": "Transaction History ({count})",
     "table": {
       "date": "Date",
       "symbol": "Ticker",
       "quantity": "Quantity",
       "amount": "Amount",
+      "details": "Settlement",
       "fundingGroup": "Funding Group",
       "currency": "Currency",
       "market": "Market",
@@ -215,10 +218,13 @@
     "description": "Calculate remaining holdings, average cost, and realized P&L from trades.",
     "actions": {
       "refreshQuotes": "Refresh quotes",
-      "viewHistory": "View history"
+      "viewHistory": "View history", "expandClosed": "Show closed", "collapseClosed": "Hide closed"
     },
+    "summary": { "open": "Open positions", "closed": "{count} closed", "jp": "Japan holdings", "us": "US holdings", "unrealized": "Unrealized by currency", "marketValueHint": "JPY and USD are kept separate" },
     "quotesAsOf": "Quotes as of {date}",
+    "splitDetection": { "action": "Detect splits", "loading": "Scanning…", "title": "Split candidates", "description": "Uses explicit corporate actions, never price movement guesses. You can edit the suggested quantity before applying.", "summary": "Scanned {count} symbols and found {candidates} unrecorded events.", "failed": "Corporate actions could not be loaded for: {symbols}", "date": "Effective date", "ratio": "Reported ratio", "before": "Before", "after": "Corrected quantity", "apply": "Apply correction", "empty": "No unrecorded stock splits were found.", "invalidQuantity": "Corrected quantity must be greater than zero.", "recordNote": "Confirmed by position split detection" },
     "activeTitle": "Active positions ({count})",
+    "selectionHint": "Select a row for funding-group details and price history",
     "closedTitle": "Closed positions ({count})",
     "table": {
       "symbol": "Ticker",
@@ -228,6 +234,7 @@
       "pl": "Realized P&L",
       "price": "Last Price",
       "unrealized": "Unrealized P&L"
+      ,"source": "Funding source"
     },
     "groupTable": {
       "group": "Funding Group"
@@ -246,7 +253,7 @@
   },
   "funds": {
     "title": "Funds & Groups",
-    "description": "Manage funding groups and review balances.",
+    "description": "Review JPY and USD accounts and cash activity reconstructed from broker reports.",
     "formTitle": "Add Funding Group",
     "fields": {
       "name": "Name",
@@ -261,8 +268,10 @@
     "submit": "Create Group",
     "listTitle": "Funding Groups ({count})",
     "actions": {
-      "addCapital": "Add capital"
+      "addCapital": "Add capital", "settings": "Group settings", "closeSettings": "Hide settings", "advanced": "Advanced", "closeAdvanced": "Hide advanced"
     },
+    "overview": { "brokerAccount": "Broker cash account" },
+    "cashLedger": { "title": "Cash activity", "description": "{count} broker-report entries. JPY and USD stay separate while linked transfers reconcile automatically.", "date": "Date", "type": "Activity", "descriptionColumn": "Description", "amount": "Amount", "empty": "Import a cash report to begin" },
     "table": {
       "name": "Name",
       "currency": "Currency",
@@ -469,14 +478,18 @@
   },
   "imports": {
     "title": "Broker Report Import",
-    "description": "Upload domestic and US broker reports for fast bulk import. Duplicate trades are skipped automatically.",
+    "description": "Import broker-exported trade, JPY cash, and foreign-currency reports with linking and duplicate protection.",
     "formTitle": "Select Report Files",
+    "mappingTitle": "Ledger mapping",
+    "mappingHint": "Keep the defaults unless you use multiple funding groups.",
     "runtimeTarget": "This import writes directly into the live data directory used by the running app, not the realdata backup folder.",
     "applyHint": "Applying the import appends new trades quickly and skips duplicates that already exist.",
     "previewHint": "Preview rows are generated from the uploaded reports and current funding-group mapping.",
     "fields": {
       "domestic": "Domestic CSV",
       "us": "US CSV",
+      "jpyCash": "JPY cash report CSV",
+      "foreignCash": "Foreign cash report CSV",
       "jpyPositionGroup": "JPY Position Group",
       "jpySettlementGroup": "JPY Settlement Group",
       "usdPositionGroup": "USD Position Group",
@@ -490,9 +503,20 @@
     },
     "selectedFile": "{label}: {file}",
     "previewTitle": "Import Preview ({count})",
+    "cashPreviewTitle": "Cash preview ({count})",
+    "cashPreviewDescription": "Same-day, same-amount JPY and foreign transfer rows are linked to prevent double counting.",
+    "cashLedgerTitle": "Imported cash activity ({count})",
+    "cashLedgerDescription": "Shows the latest 100 broker rows. Taxes now live in this ledger instead of a separate workflow.",
+    "cashLedgerEmpty": "No cash reports imported yet.",
+    "cashEmpty": "Select a JPY or foreign cash report to preview it here.",
+    "cashLinked": "Linked",
+    "reportedAmount": "reported value",
+    "cashDirection": { "in": "Deposit", "out": "Withdrawal" },
+    "cashCategory": { "external_transfer": "External transfer", "internal_transfer": "Internal link", "trade_settlement": "Trade settlement", "dividend": "Dividend", "tax": "Tax", "investment": "Fund investment", "fx": "FX", "other": "Other" },
+    "cashTable": { "date": "Date", "flow": "Flow", "category": "Category", "description": "Description", "amount": "Amount", "link": "Link" },
     "previewReady": "Generated {count} preview rows.",
     "previewSummary": "Generated {count} preview rows. {applied} would be imported and {skipped} would be skipped as duplicates.",
-    "applyDone": "Imported {count} trades and skipped {skipped} duplicates.",
+    "applyDone": "Imported {count} report rows and skipped {skipped} duplicates.",
     "undo": {
       "title": "Undo latest import",
       "description": "Delete the {count} trades that were just imported if this batch was a mistake.",

@@ -7,6 +7,7 @@ from typing import Iterable, Iterator, Sequence
 
 from ..models.schemas import (
     AnnualTaxSettlement,
+    CashActivity,
     FxExchangeRecord,
     FundingCapitalAdjustment,
     FundingGroup,
@@ -184,6 +185,26 @@ class SQLiteStorage:
         );
         CREATE INDEX IF NOT EXISTS idx_quotes_as_of
             ON quotes (as_of);
+
+        CREATE TABLE IF NOT EXISTS cash_activities (
+            id TEXT PRIMARY KEY,
+            activity_date TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            currency TEXT,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            transaction_type TEXT NOT NULL,
+            detail_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            source_line INTEGER NOT NULL,
+            link_group_id TEXT,
+            linked_activity_id TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_activities_date
+            ON cash_activities (activity_date, id);
+        CREATE INDEX IF NOT EXISTS idx_cash_activities_link
+            ON cash_activities (link_group_id);
         """
         with self._connect() as connection:
             connection.executescript(schema)
@@ -492,6 +513,39 @@ class SQLiteStorage:
                     """,
                     rows,
                 )
+
+    def replace_cash_activities(self, activities: Iterable[CashActivity]) -> None:
+        rows: Sequence[tuple] = [
+            (
+                item.id,
+                item.activity_date.isoformat(),
+                item.direction.value,
+                item.currency.value if item.currency else None,
+                float(item.amount),
+                item.category.value,
+                item.transaction_type,
+                item.detail_type,
+                item.description,
+                item.source_file,
+                item.source_line,
+                item.link_group_id,
+                item.linked_activity_id,
+            )
+            for item in activities
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM cash_activities;")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO cash_activities (
+                        id, activity_date, direction, currency, amount, category,
+                        transaction_type, detail_type, description, source_file,
+                        source_line, link_group_id, linked_activity_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
     # Read helpers
     def load_transactions(self) -> list[Transaction]:
         with self._connect() as connection:
@@ -581,6 +635,16 @@ class SQLiteStorage:
             ).fetchall()
         return [QuoteRecord(**dict(row)) for row in rows]
 
+    def load_cash_activities(self) -> list[CashActivity]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, activity_date, direction, currency, amount, category,"
+                " transaction_type, detail_type, description, source_file, source_line,"
+                " link_group_id, linked_activity_id FROM cash_activities"
+                " ORDER BY activity_date DESC, source_file, source_line;"
+            ).fetchall()
+        return [CashActivity(**dict(row)) for row in rows]
+
     def has_data(self) -> bool:
         query = "SELECT 1 FROM transactions LIMIT 1;"
         with self._connect() as connection:
@@ -609,4 +673,7 @@ class SQLiteStorage:
             if cursor.fetchone():
                 return True
             cursor = connection.execute("SELECT 1 FROM quotes LIMIT 1;")
+            if cursor.fetchone():
+                return True
+            cursor = connection.execute("SELECT 1 FROM cash_activities LIMIT 1;")
             return cursor.fetchone() is not None

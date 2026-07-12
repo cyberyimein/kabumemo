@@ -1,8 +1,8 @@
 {
   "app": {
     "header": {
-  "title": "一个股票交易记录器",
-      "tagline": "本地管理交易、持仓、资金与纳税流程"
+      "title": "Kabumemo",
+      "tagline": "券商报表驱动的本地投资账本"
     },
     "language": {
       "label": "界面语言"
@@ -39,6 +39,7 @@
         "fx": "换汇记录",
         "fxMeta": "独立 FX 条目",
         "tax": "待纳税",
+        "cash": "资金流水",
         "taxMeta": "非 NISA 卖出"
       }
     },
@@ -55,7 +56,7 @@
     "transactions": "交易表",
     "positions": "持仓表",
     "funds": "资金表",
-    "import": "导入",
+    "import": "报表中心",
     "tax": "纳税"
   },
   "common": {
@@ -141,13 +142,15 @@
     },
   "submit": "录入交易",
   "update": "保存修改",
-  "editingHint": "正在编辑这条交易，保存后将覆盖，取消则回到快速录入。",
+    "editingHint": "正在编辑这条交易，保存后将覆盖，取消则回到快速录入。",
+    "manual": { "open": "手动补录", "close": "收起补录", "hint": "仅用于修正报告中缺失或异常的交易" },
     "historyTitle": "历史交易 ({count})",
     "table": {
       "date": "日期",
       "symbol": "股票",
       "quantity": "数量",
       "amount": "金额",
+      "details": "结算",
       "fundingGroup": "资金组",
       "currency": "货币",
       "market": "市场",
@@ -215,10 +218,13 @@
     "description": "根据交易自动计算剩余仓位、平均成本与落地盈亏。",
     "actions": {
       "refreshQuotes": "刷新行情",
-      "viewHistory": "查看走势"
+      "viewHistory": "查看走势", "expandClosed": "查看已平仓", "collapseClosed": "收起已平仓"
     },
+    "summary": { "open": "当前持仓", "closed": "已平仓 {count}", "jp": "日股持仓", "us": "美股持仓", "unrealized": "分币种浮动盈亏", "marketValueHint": "不混合日元与美元计算" },
     "quotesAsOf": "行情更新时间：{date}",
+    "splitDetection": { "action": "检测拆股", "loading": "检测中…", "title": "拆股候选", "description": "读取明确的公司行动，不根据价格波动猜测。建议股数可以在确认前修改。", "summary": "已扫描 {count} 只股票，发现 {candidates} 个未登记事件。", "failed": "以下股票暂时无法获取公司行动：{symbols}", "date": "生效日", "ratio": "报告比例", "before": "修正前股数", "after": "修正后股数", "apply": "应用修正", "empty": "没有发现尚未登记的拆股事件。", "invalidQuantity": "修正后股数必须大于 0。", "recordNote": "由持仓拆股检测确认" },
     "activeTitle": "当前持仓 ({count})",
+    "selectionHint": "点击一行查看资金组明细与价格走势",
     "closedTitle": "历史持仓 ({count})",
     "table": {
       "symbol": "股票",
@@ -228,6 +234,7 @@
       "pl": "落地盈亏",
       "price": "现价",
       "unrealized": "浮动盈亏"
+      ,"source": "资金来源"
     },
     "groupTable": {
       "group": "资金组"
@@ -246,7 +253,7 @@
   },
   "funds": {
     "title": "资金与资金组",
-    "description": "管理资金组配置并查看当前资金状况。",
+    "description": "根据券商报告查看日元、美元账户与出入金流水。",
     "formTitle": "新增资金组",
     "fields": {
       "name": "名称",
@@ -261,8 +268,10 @@
     "submit": "创建资金组",
     "listTitle": "资金组列表 ({count})",
     "actions": {
-      "addCapital": "追加资金"
+      "addCapital": "追加资金", "settings": "资金组设置", "closeSettings": "收起设置", "advanced": "高级维护", "closeAdvanced": "收起维护"
     },
+    "overview": { "brokerAccount": "券商资金账户" },
+    "cashLedger": { "title": "出入金流水", "description": "由券商报告重建，共 {count} 条；日元与美元独立记账，关联振替自动联动。", "date": "日期", "type": "业务", "descriptionColumn": "摘要", "amount": "金额", "empty": "尚未导入出入金报告" },
     "table": {
       "name": "名称",
       "currency": "货币",
@@ -469,14 +478,18 @@
   },
   "imports": {
     "title": "券商报表导入",
-    "description": "上传日股和美股报表，快速批量导入交易；重复记录会自动跳过。",
+    "description": "上传券商导出的成交与出入金报表，统一预览、联动、去重后写入本地账本。",
     "formTitle": "选择报表文件",
+    "mappingTitle": "账本映射",
+    "mappingHint": "通常保持默认即可，仅在多资金组时调整。",
     "runtimeTarget": "当前导入会直接写入运行中的 data 目录交易数据，不会写入 realdata 备份目录。",
     "applyHint": "应用导入后会快速追加新交易；已存在的重复记录会自动跳过。",
     "previewHint": "预览结果来自当前上传的券商报告与资金组映射，确认无误后再应用。",
     "fields": {
       "domestic": "日股报表 CSV",
       "us": "美股报表 CSV",
+      "jpyCash": "圆货入出金明细 CSV",
+      "foreignCash": "外货入出金明细 CSV",
       "jpyPositionGroup": "JPY 持仓来源组",
       "jpySettlementGroup": "JPY 结算资金组",
       "usdPositionGroup": "USD 持仓来源组",
@@ -490,9 +503,20 @@
     },
     "selectedFile": "{label}：{file}",
     "previewTitle": "导入预览 ({count})",
+    "cashPreviewTitle": "资金流水预览 ({count})",
+    "cashPreviewDescription": "同日同额的圆货与外货振替会自动标记为一组联动，避免误算为两笔资金。",
+    "cashLedgerTitle": "已导入资金流水 ({count})",
+    "cashLedgerDescription": "显示最近 100 条券商流水；纳税已经作为资金流水保留，不再需要单独录入。",
+    "cashLedgerEmpty": "尚未导入出入金报表。",
+    "cashEmpty": "选择圆货或外货出入金报表后可在这里预览。",
+    "cashLinked": "已联动",
+    "reportedAmount": "报表原值",
+    "cashDirection": { "in": "入金", "out": "出金" },
+    "cashCategory": { "external_transfer": "外部出入金", "internal_transfer": "内部联动", "trade_settlement": "交易结算", "dividend": "股息/分配金", "tax": "税费", "investment": "投信", "fx": "换汇", "other": "其他" },
+    "cashTable": { "date": "日期", "flow": "方向", "category": "分类", "description": "摘要", "amount": "金额", "link": "联动" },
     "previewReady": "已生成 {count} 条导入预览。",
     "previewSummary": "已生成 {count} 条导入预览；其中预计导入 {applied} 条，预计因重复跳过 {skipped} 条。",
-    "applyDone": "已导入 {count} 条交易，跳过 {skipped} 条重复记录。",
+    "applyDone": "已导入 {count} 条报表记录，跳过 {skipped} 条重复记录。",
     "undo": {
       "title": "撤销最近一次导入",
       "description": "如果这批导入有误，可以一键删除刚刚新增的 {count} 条交易。",

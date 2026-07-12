@@ -1,11 +1,19 @@
 <template>
-  <section class="panel">
+  <section class="panel app-panel">
     <header class="panel-header">
       <div>
         <h2>{{ t("transactions.title") }}</h2>
         <p>{{ t("transactions.description") }}</p>
       </div>
       <div class="header-actions">
+        <button
+          v-if="!roundYieldMode"
+          type="button"
+          class="primary-btn header-button header-button--primary"
+          @click="manualFormOpen = !manualFormOpen"
+        >
+          {{ manualFormOpen ? t("transactions.manual.close") : t("transactions.manual.open") }}
+        </button>
         <template v-if="roundYieldMode">
           <button
             type="button"
@@ -41,7 +49,7 @@
     </header>
 
     <div class="panel-grid">
-      <div class="form-column">
+      <div v-if="roundYieldMode || manualFormOpen || isEditing" class="form-column">
         <transition name="summary-fade">
           <div
             v-if="roundYieldMode"
@@ -86,14 +94,14 @@
           </div>
         </transition>
 
-        <form class="surface" @submit.prevent="handleSubmit">
-        <h3>
-          {{
-            isEditing
-              ? t("transactions.formTitleEdit")
-              : t("transactions.formTitle")
-          }}
-        </h3>
+        <form class="surface manual-entry" @submit.prevent="handleSubmit">
+        <div class="manual-entry__header">
+          <div>
+            <h3>{{ isEditing ? t("transactions.formTitleEdit") : t("transactions.formTitle") }}</h3>
+            <p>{{ t("transactions.manual.hint") }}</p>
+          </div>
+          <button v-if="!isEditing" type="button" class="ghost-button" @click="manualFormOpen = false">{{ t("common.actions.close") }}</button>
+        </div>
         <p v-if="isEditing" class="editing-hint">
           {{ t("transactions.editingHint") }}
         </p>
@@ -287,17 +295,17 @@
           <table>
             <thead>
               <tr>
-                <th class="select-column">{{ t("common.select") }}</th>
+                <th v-if="roundYieldMode" class="select-column">{{ t("common.select") }}</th>
                 <th>{{ t("transactions.table.date") }}</th>
                 <th>{{ t("transactions.table.symbol") }}</th>
                 <th class="numeric">{{ t("transactions.table.quantity") }}</th>
                 <th class="numeric">{{ t("transactions.table.amount") }}</th>
-                <th>{{ t("common.labels.tags") }}</th>
+                <th>{{ t("transactions.table.details") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!transactions.length">
-                <td colspan="6" class="empty">
+                <td :colspan="roundYieldMode ? 6 : 5" class="empty">
                   {{ t("transactions.empty") }}
                 </td>
               </tr>
@@ -317,25 +325,16 @@
                 @keydown.enter.prevent="handleRowActivation(tx)"
                 @keydown.space.prevent="handleRowActivation(tx)"
               >
-                <td class="select-column" @click.stop>
+                <td v-if="roundYieldMode" class="select-column" @click.stop>
                   <input
-                    v-if="roundYieldMode"
                     type="checkbox"
                     :checked="isSelected(tx.id)"
                     :aria-label="t('transactions.roundYield.table.selectRow', { symbol: tx.symbol, date: tx.trade_date })"
                     @change="toggleSelection(tx.id)"
                   />
-                  <input
-                    v-else
-                    type="radio"
-                    name="transaction-select"
-                    :checked="activeTransactionId === tx.id"
-                    :aria-label="t('transactions.roundYield.table.selectRow', { symbol: tx.symbol, date: tx.trade_date })"
-                    @change="selectActiveTransaction(tx.id)"
-                  />
                 </td>
                 <td>{{ tx.trade_date }}</td>
-                <td>{{ tx.symbol }}</td>
+                <td><div class="instrument-cell"><strong>{{ tx.symbol }}</strong><small>{{ marketLabel(tx.market) }}</small></div></td>
                 <td :class="['numeric', { negative: tx.quantity < 0, positive: tx.quantity > 0 }]">
                   {{ formatNumber(tx.quantity) }}
                 </td>
@@ -345,12 +344,14 @@
                     <span class="flat-tag" :class="tx.quantity < 0 ? 'flat-tag--sell' : 'flat-tag--buy'">
                       {{ tx.quantity < 0 ? t("common.toggle.sell") : t("common.toggle.buy") }}
                     </span>
-                    <span class="flat-tag">{{ tx.position_group || tx.funding_group }}</span>
-                    <span class="flat-tag" v-if="(tx.settlement_group || tx.funding_group) !== (tx.position_group || tx.funding_group)">
+                    <span class="flat-tag" v-if="(tx.settlement_group || tx.funding_group) === (tx.position_group || tx.funding_group)">{{ tx.position_group || tx.funding_group }}</span>
+                    <span class="flat-tag" v-else>
                       {{ tx.position_group || tx.funding_group }} → {{ tx.settlement_group || tx.funding_group }}
                     </span>
-                    <span class="flat-tag flat-tag--currency">{{ tx.settlement_currency || tx.cash_currency }}</span>
-                    <span class="flat-tag">{{ marketLabel(tx.market) }}</span>
+                    <span
+                      v-if="(tx.settlement_currency || tx.cash_currency) !== (tx.settlement_group || tx.funding_group)"
+                      class="flat-tag flat-tag--currency"
+                    >{{ tx.settlement_currency || tx.cash_currency }}</span>
                   </div>
                 </td>
               </tr>
@@ -501,6 +502,7 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 
 const pending = ref(false);
+const manualFormOpen = ref(false);
 const tradeType = ref<"buy" | "sell">("buy");
 const editingId = ref<string | null>(null);
 const activeTransactionId = ref<string | null>(null);
@@ -976,6 +978,7 @@ function startEditing(tx: Transaction) {
     exitRoundYieldMode();
   }
   editingId.value = tx.id;
+  manualFormOpen.value = true;
   setTradeType(tx.quantity < 0 ? "sell" : "buy");
   setMarket(tx.market === "US" ? "US" : "JP");
   populateFormFromTransaction(tx);
@@ -983,6 +986,7 @@ function startEditing(tx: Transaction) {
 
 function cancelEditing() {
   resetFormState();
+  manualFormOpen.value = false;
 }
 
 async function handleSubmit() {
@@ -1181,7 +1185,7 @@ function setMarket(type: "JP" | "US") {
 .panel-grid {
   display: grid;
   gap: 1.5rem;
-  grid-template-columns: minmax(320px, 420px) 1fr;
+  grid-template-columns: 1fr;
 }
 
 .form-column {
@@ -1189,6 +1193,14 @@ function setMarket(type: "JP" | "US") {
   flex-direction: column;
   gap: 1rem;
 }
+
+.form-column > .surface {
+  border: 1px solid var(--divider);
+}
+
+.manual-entry { background: #fff; padding: 1.2rem 1.3rem; }
+.manual-entry__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--divider); }
+.manual-entry__header p { margin-top: .3rem; color: var(--text-faint); font-size: .8rem; }
 
 @media (max-width: 1024px) {
   .panel-grid {
@@ -1229,8 +1241,8 @@ function setMarket(type: "JP" | "US") {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .85rem 1rem;
   align-items: end;
 }
 
@@ -1243,9 +1255,9 @@ function setMarket(type: "JP" | "US") {
 }
 
 .form-grid label span {
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--text-faint);
 }
 
@@ -1253,7 +1265,8 @@ function setMarket(type: "JP" | "US") {
 .form-grid textarea {
   border: 1px solid var(--divider);
   border-radius: var(--radius-md);
-  padding: 0.55rem 0.75rem;
+  min-height: 42px;
+  padding: 0.6rem 0.75rem;
   font-size: 0.95rem;
   background: var(--panel);
   color: var(--text);
@@ -1275,6 +1288,7 @@ function setMarket(type: "JP" | "US") {
 
 .memo-field {
   align-self: stretch;
+  grid-column: span 2;
 }
 
 @media (max-width: 900px) {
@@ -1309,9 +1323,8 @@ function setMarket(type: "JP" | "US") {
 
 
 .toggle-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  display: flex;
+  gap: .75rem;
   align-items: start;
 }
 
@@ -1319,7 +1332,7 @@ function setMarket(type: "JP" | "US") {
   align-self: stretch;
   display: flex;
   justify-content: flex-start;
-  width: 100%;
+  width: auto;
   padding: 0.25rem;
   border-radius: 999px;
   border: 1px solid var(--divider);
@@ -1342,7 +1355,8 @@ function setMarket(type: "JP" | "US") {
   border: none;
   background: transparent;
   color: var(--text-dim);
-  padding: 0.45rem 1.15rem;
+  min-height: 32px;
+  padding: 0.35rem 1rem;
   border-radius: 999px;
   font-size: 0.85rem;
   letter-spacing: 0.45px;
@@ -1405,6 +1419,10 @@ function setMarket(type: "JP" | "US") {
 .table-scroll table {
   min-width: 640px;
 }
+
+.instrument-cell { display: grid; gap: .15rem; }
+.instrument-cell strong { font-size: .94rem; letter-spacing: .01em; }
+.instrument-cell small { color: var(--text-faint); font-size: .7rem; }
 
 .select-column {
   width: 3rem;

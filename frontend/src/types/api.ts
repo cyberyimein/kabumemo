@@ -1,5 +1,15 @@
 export type Market = "JP" | "US";
 export type Currency = "JPY" | "USD";
+export type CashDirection = "in" | "out";
+export type CashActivityCategory =
+  | "external_transfer"
+  | "internal_transfer"
+  | "trade_settlement"
+  | "dividend"
+  | "tax"
+  | "investment"
+  | "fx"
+  | "other";
 export type TaxStatus = "Y" | "N";
 export type BrokerAccountType = "NISA" | "SPECIFIC" | "GENERAL" | "UNKNOWN";
 
@@ -42,6 +52,20 @@ export interface StockSplitPayload {
 
 export interface StockSplit extends StockSplitPayload {
   id: string;
+}
+
+export interface StockSplitCandidate extends StockSplitPayload {
+  source: string;
+  confidence: string;
+  quantity_before: number;
+  suggested_quantity_after: number;
+  quantity_delta: number;
+}
+
+export interface StockSplitDetectionResponse {
+  candidates: StockSplitCandidate[];
+  scanned_symbols: number;
+  failed_symbols: string[];
 }
 
 export interface FxExchangeBase {
@@ -284,10 +308,28 @@ export interface BrokerImportFile {
 export interface BrokerImportPreviewRequest {
   domestic_report?: BrokerImportFile | null;
   us_report?: BrokerImportFile | null;
+  jpy_cash_report?: BrokerImportFile | null;
+  foreign_cash_report?: BrokerImportFile | null;
   position_group_jpy?: string;
   settlement_group_jpy?: string;
   position_group_usd?: string;
   settlement_group_usd?: string;
+}
+
+export interface CashActivity {
+  id: string;
+  activity_date: string;
+  direction: CashDirection;
+  currency?: Currency | null;
+  amount: number;
+  category: CashActivityCategory;
+  transaction_type: string;
+  detail_type: string;
+  description: string;
+  source_file: string;
+  source_line: number;
+  link_group_id?: string | null;
+  linked_activity_id?: string | null;
 }
 
 export interface BrokerImportPreviewItem {
@@ -311,14 +353,28 @@ export interface BrokerImportPreviewItem {
 
 export interface BrokerImportPreviewResponse {
   items: BrokerImportPreviewItem[];
+  cash_items: CashActivity[];
   warnings: string[];
   applied_count: number;
   skipped_count: number;
   applied_transaction_ids: string[];
+  applied_cash_count: number;
+  skipped_cash_count: number;
+  applied_cash_activity_ids: string[];
 }
 
 export interface BrokerImportApplyRequest extends BrokerImportPreviewRequest {
   replace_existing_transactions?: boolean;
+}
+
+export interface BrokerImportUndoRequest {
+  transaction_ids: string[];
+  cash_activity_ids: string[];
+}
+
+export interface BrokerImportUndoResponse {
+  deleted_transaction_ids: string[];
+  deleted_cash_activity_ids: string[];
 }
 
 export interface SuspiciousDuplicateGroup {

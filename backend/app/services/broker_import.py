@@ -4,7 +4,6 @@ import base64
 import csv
 import hashlib
 import io
-from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Iterable
 
@@ -15,6 +14,9 @@ from ..models.schemas import (
     BrokerImportPreviewItem,
     BrokerImportPreviewRequest,
     BrokerImportPreviewResponse,
+    CashActivity,
+    CashActivityCategory,
+    CashDirection,
     Currency,
     Market,
     TaxStatus,
@@ -80,6 +82,109 @@ def _normalize_account_type(value: str) -> BrokerAccountType:
 def _stable_transaction_id(parts: Iterable[str]) -> str:
     digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _cash_activity_id(*parts: str) -> str:
+    return _stable_transaction_id(parts)
+
+
+def _cash_category(detail: str, kind: str, *, foreign: bool) -> CashActivityCategory:
+    if "入出金振替" in detail or "保証金" in detail:
+        return CashActivityCategory.INTERNAL_TRANSFER
+    if "米国株式買付代金" in detail or "米国株式売却代金" in detail:
+        return CashActivityCategory.INTERNAL_TRANSFER
+    if "税" in detail:
+        return CashActivityCategory.TAX
+    if "配当" in kind or "分配" in kind or "配当" in detail:
+        return CashActivityCategory.DIVIDEND
+    if "外国為替取引" in detail:
+        return CashActivityCategory.FX
+    if "投信" in detail:
+        return CashActivityCategory.INVESTMENT
+    if "銀行" in detail or "金融機関" in kind or "外貨入金" in detail or "外貨出金" in detail:
+        return CashActivityCategory.EXTERNAL_TRANSFER
+    return CashActivityCategory.OTHER
+
+
+def _parse_cash_rows(
+    rows: list[list[str]], file_name: str, *, foreign: bool
+) -> list[CashActivity]:
+    start = _find_header_index(rows, "入出金日")
+    header = [cell.strip() for cell in rows[start]]
+    index = {name: position for position, name in enumerate(header)}
+    required = {"入出金日", "取引", "区分", "摘要", "出金額", "入金額"}
+    if not required.issubset(index):
+        raise ValueError("Cash report columns are incomplete")
+
+    items: list[CashActivity] = []
+    occurrences: dict[tuple[str, ...], int] = {}
+    for line_number, row in enumerate(rows[start + 1 :], start=start + 2):
+        if not row or not row[0].strip():
+            continue
+        direction = CashDirection.IN if row[index["取引"]].strip() == "入金" else CashDirection.OUT
+        amount_index = index["入金額"] if direction == CashDirection.IN else index["出金額"]
+        amount = float((row[amount_index] or "0").replace(",", "").strip())
+        detail_type = row[index["区分"]].strip()
+        description = row[index["摘要"]].strip()
+        raw_currency = row[index["通貨"]].strip() if "通貨" in index else "円"
+        currency = Currency.USD if raw_currency == "米ドル" else (None if raw_currency == "-" else Currency.JPY)
+        activity_date = _parse_date(row[index["入出金日"]])
+        fingerprint = (
+            activity_date.isoformat(), direction.value, currency.value if currency else "-",
+            f"{amount:.4f}", detail_type, description,
+        )
+        occurrence = occurrences.get(fingerprint, 0) + 1
+        occurrences[fingerprint] = occurrence
+        activity_id = _cash_activity_id(*fingerprint, str(occurrence))
+        items.append(
+            CashActivity(
+                id=activity_id,
+                activity_date=activity_date,
+                direction=direction,
+                currency=currency,
+                amount=round(amount, 4),
+                category=_cash_category(description, detail_type, foreign=foreign),
+                transaction_type=row[index["取引"]].strip(),
+                detail_type=detail_type,
+                description=description,
+                source_file=file_name,
+                source_line=line_number,
+            )
+        )
+    return items
+
+
+def _link_cash_transfers(items: list[CashActivity]) -> None:
+    jpy_candidates = [
+        item for item in items
+        if item.currency == Currency.JPY
+        and item.description in {"米国株式買付代金", "米国株式売却代金"}
+    ]
+    foreign_candidates = [
+        item for item in items if item.currency is None and item.description == "入出金振替"
+    ]
+    used: set[str] = set()
+    for jpy_item in jpy_candidates:
+        counterpart = next(
+            (
+                item for item in foreign_candidates
+                if item.id not in used
+                and item.activity_date == jpy_item.activity_date
+                and abs(item.amount - jpy_item.amount) < 0.005
+                and item.direction != jpy_item.direction
+            ),
+            None,
+        )
+        if counterpart is None:
+            continue
+        used.add(counterpart.id)
+        link_id = _cash_activity_id(
+            "cash-link", jpy_item.activity_date.isoformat(), f"{jpy_item.amount:.2f}", jpy_item.id, counterpart.id
+        )
+        jpy_item.link_group_id = link_id
+        counterpart.link_group_id = link_id
+        jpy_item.linked_activity_id = counterpart.id
+        counterpart.linked_activity_id = jpy_item.id
 
 
 def _default_tax_status(account_type: BrokerAccountType, quantity: float) -> TaxStatus:
@@ -229,6 +334,7 @@ def _parse_us_rows(
 
 def preview_broker_import(request: BrokerImportPreviewRequest) -> BrokerImportPreviewResponse:
     items: list[BrokerImportPreviewItem] = []
+    cash_items: list[CashActivity] = []
     warnings: list[str] = []
 
     if request.domestic_report:
@@ -255,6 +361,22 @@ def preview_broker_import(request: BrokerImportPreviewRequest) -> BrokerImportPr
         except ValueError as exc:
             warnings.append(str(exc))
 
+    for report, foreign in (
+        (request.jpy_cash_report, False),
+        (request.foreign_cash_report, True),
+    ):
+        if not report:
+            continue
+        try:
+            cash_items.extend(
+                _parse_cash_rows(_reader_from_text(_decode_file(report)), report.file_name, foreign=foreign)
+            )
+        except ValueError as exc:
+            warnings.append(str(exc))
+
+    _link_cash_transfers(cash_items)
+    cash_items.sort(key=lambda item: (item.activity_date, item.source_file, item.source_line), reverse=True)
+
     items.sort(
         key=lambda item: (
             item.trade_date,
@@ -265,7 +387,7 @@ def preview_broker_import(request: BrokerImportPreviewRequest) -> BrokerImportPr
             item.source_line,
         )
     )
-    return BrokerImportPreviewResponse(items=items, warnings=warnings)
+    return BrokerImportPreviewResponse(items=items, cash_items=cash_items, warnings=warnings)
 
 
 def preview_items_to_transactions(items: Iterable[BrokerImportPreviewItem]) -> list[Transaction]:

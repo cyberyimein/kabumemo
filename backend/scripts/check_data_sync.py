@@ -110,6 +110,12 @@ def main() -> None:
             sqlite_items=repository.list_quotes_from_sqlite(),
             key_field="symbol",
         ),
+        diff_collections(
+            label="cash activities",
+            json_items=repository.list_cash_activities(),
+            sqlite_items=repository.list_cash_activities_from_sqlite(),
+            key_field="id",
+        ),
     ]
 
     clean = all(item["clean"] for item in results)

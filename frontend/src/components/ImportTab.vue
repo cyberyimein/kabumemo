@@ -1,5 +1,5 @@
 <template>
-  <section class="panel surface-panel">
+  <section class="panel surface-panel app-panel">
     <header class="panel-header">
       <div>
         <h2>{{ t("imports.title") }}</h2>
@@ -10,7 +10,7 @@
     <div class="panel-grid">
       <form class="surface import-form" @submit.prevent="handlePreview">
         <h3>{{ t("imports.formTitle") }}</h3>
-        <div class="form-grid">
+        <div class="report-file-grid">
           <label class="file-field">
             <span>{{ t("imports.fields.domestic") }}</span>
             <input
@@ -29,6 +29,30 @@
               @change="onFileChange($event, 'us')"
             />
           </label>
+          <label class="file-field">
+            <span>{{ t("imports.fields.jpyCash") }}</span>
+            <input
+              ref="jpyCashInputRef"
+              type="file"
+              accept=".csv,text/csv"
+              @change="onFileChange($event, 'jpyCash')"
+            />
+          </label>
+          <label class="file-field">
+            <span>{{ t("imports.fields.foreignCash") }}</span>
+            <input
+              ref="foreignCashInputRef"
+              type="file"
+              accept=".csv,text/csv"
+              @change="onFileChange($event, 'foreignCash')"
+            />
+          </label>
+        </div>
+        <div class="mapping-header">
+          <span>{{ t("imports.mappingTitle") }}</span>
+          <small>{{ t("imports.mappingHint") }}</small>
+        </div>
+        <div class="mapping-grid">
           <label>
             <span>{{ t("imports.fields.jpyPositionGroup") }}</span>
             <BaseSelect v-model="positionGroupJpy" :options="jpyGroupOptions" />
@@ -60,6 +84,18 @@
               {{ t("common.actions.cancel") }}
             </button>
           </div>
+          <div v-if="jpyCashFile" class="selected-file">
+            <span>{{ t("imports.selectedFile", { label: t("imports.fields.jpyCash"), file: jpyCashFile.file_name }) }}</span>
+            <button type="button" class="ghost-btn" @click="clearSelectedFile('jpyCash')">
+              {{ t("common.actions.cancel") }}
+            </button>
+          </div>
+          <div v-if="foreignCashFile" class="selected-file">
+            <span>{{ t("imports.selectedFile", { label: t("imports.fields.foreignCash"), file: foreignCashFile.file_name }) }}</span>
+            <button type="button" class="ghost-btn" @click="clearSelectedFile('foreignCash')">
+              {{ t("common.actions.cancel") }}
+            </button>
+          </div>
         </div>
 
         <div class="form-actions">
@@ -69,7 +105,7 @@
           <button
             type="button"
             class="ghost-btn"
-            :disabled="!preview.items.length || pendingApply"
+            :disabled="(!preview.items.length && !preview.cash_items.length) || pendingApply"
             @click="handleApply"
           >
             {{ t("imports.actions.apply") }}
@@ -129,11 +165,75 @@
       </div>
     </div>
 
-    <div v-if="lastAppliedTransactionIds.length" class="surface import-undo">
+    <div class="surface import-cash-preview">
+      <div class="import-subsection-header">
+        <div>
+          <h3>{{ t("imports.cashPreviewTitle", { count: preview.cash_items.length }) }}</h3>
+          <p>{{ t("imports.cashPreviewDescription") }}</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t("imports.cashTable.date") }}</th>
+              <th>{{ t("imports.cashTable.flow") }}</th>
+              <th>{{ t("imports.cashTable.category") }}</th>
+              <th>{{ t("imports.cashTable.description") }}</th>
+              <th class="numeric">{{ t("imports.cashTable.amount") }}</th>
+              <th>{{ t("imports.cashTable.link") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!preview.cash_items.length">
+              <td colspan="6" class="empty">{{ t("imports.cashEmpty") }}</td>
+            </tr>
+            <tr v-for="item in preview.cash_items" :key="item.id">
+              <td>{{ item.activity_date }}</td>
+              <td>{{ t(`imports.cashDirection.${item.direction}`) }}</td>
+              <td>{{ t(`imports.cashCategory.${item.category}`) }}</td>
+              <td>{{ item.description }}</td>
+              <td class="numeric">{{ formatCashAmount(item) }}</td>
+              <td>
+                <span v-if="item.link_group_id" class="ledger-link">{{ t("imports.cashLinked") }}</span>
+                <span v-else>—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="surface import-cash-ledger">
+      <div class="import-subsection-header">
+        <div>
+          <h3>{{ t("imports.cashLedgerTitle", { count: props.cashActivities.length }) }}</h3>
+          <p>{{ t("imports.cashLedgerDescription") }}</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <tbody>
+            <tr v-if="!props.cashActivities.length">
+              <td class="empty">{{ t("imports.cashLedgerEmpty") }}</td>
+            </tr>
+            <tr v-for="item in props.cashActivities.slice(0, 100)" :key="item.id">
+              <td>{{ item.activity_date }}</td>
+              <td>{{ t(`imports.cashCategory.${item.category}`) }}</td>
+              <td>{{ item.description }}</td>
+              <td class="numeric">{{ formatCashAmount(item) }}</td>
+              <td><span v-if="item.link_group_id" class="ledger-link">{{ t("imports.cashLinked") }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div v-if="lastAppliedCount" class="surface import-undo">
       <div class="import-subsection-header">
         <div>
           <h3>{{ t("imports.undo.title") }}</h3>
-          <p>{{ t("imports.undo.description", { count: lastAppliedTransactionIds.length }) }}</p>
+          <p>{{ t("imports.undo.description", { count: lastAppliedCount }) }}</p>
         </div>
         <button
           type="button"
@@ -281,10 +381,12 @@ import {
   deleteTransactionsBatch,
   getSuspiciousDuplicateTransactions,
   previewBrokerImport,
+  undoBrokerImport,
 } from "@/services/api";
 import type {
   BrokerImportFile,
   BrokerImportPreviewResponse,
+  CashActivity,
   FundingGroup,
   SuspiciousDuplicateGroup,
   SuspiciousDuplicateResponse,
@@ -292,6 +394,7 @@ import type {
 
 const props = defineProps<{
   fundingGroups: FundingGroup[];
+  cashActivities: CashActivity[];
 }>();
 
 const emit = defineEmits<{
@@ -304,10 +407,14 @@ const { t } = useI18n();
 function createEmptyPreview(): BrokerImportPreviewResponse {
   return {
     items: [],
+    cash_items: [],
     warnings: [],
     applied_count: 0,
     skipped_count: 0,
     applied_transaction_ids: [],
+    applied_cash_count: 0,
+    skipped_cash_count: 0,
+    applied_cash_activity_ids: [],
   };
 }
 
@@ -321,8 +428,12 @@ function createEmptyDuplicateReview(): SuspiciousDuplicateResponse {
 
 const domesticInputRef = ref<HTMLInputElement | null>(null);
 const usInputRef = ref<HTMLInputElement | null>(null);
+const jpyCashInputRef = ref<HTMLInputElement | null>(null);
+const foreignCashInputRef = ref<HTMLInputElement | null>(null);
 const domesticFile = ref<BrokerImportFile | null>(null);
 const usFile = ref<BrokerImportFile | null>(null);
+const jpyCashFile = ref<BrokerImportFile | null>(null);
+const foreignCashFile = ref<BrokerImportFile | null>(null);
 const pendingPreview = ref(false);
 const pendingApply = ref(false);
 const pendingUndo = ref(false);
@@ -334,12 +445,18 @@ const duplicateReview = ref<SuspiciousDuplicateResponse>(createEmptyDuplicateRev
 const duplicateReviewLoaded = ref(false);
 const selectedDuplicateIds = ref<string[]>([]);
 const lastAppliedTransactionIds = ref<string[]>([]);
+const lastAppliedCashActivityIds = ref<string[]>([]);
+const lastAppliedCount = computed(
+  () => lastAppliedTransactionIds.value.length + lastAppliedCashActivityIds.value.length
+);
 
 const jpyGroups = computed(() => props.fundingGroups.filter((item) => item.currency === "JPY"));
 const usdGroups = computed(() => props.fundingGroups.filter((item) => item.currency === "USD"));
 const jpyGroupOptions = computed(() => jpyGroups.value.map((group) => ({ label: group.name, value: group.name })));
 const usdGroupOptions = computed(() => usdGroups.value.map((group) => ({ label: group.name, value: group.name })));
-const hasSelectedFiles = computed(() => Boolean(domesticFile.value || usFile.value));
+const hasSelectedFiles = computed(() => Boolean(
+  domesticFile.value || usFile.value || jpyCashFile.value || foreignCashFile.value
+));
 const canResetImport = computed(() => hasSelectedFiles.value || preview.value.items.length > 0 || Boolean(message.value));
 const selectedDuplicateIdSet = computed(() => new Set(selectedDuplicateIds.value));
 
@@ -374,31 +491,41 @@ function normalizeSelectedIds(ids: string[]): string[] {
 function resetImportState() {
   domesticFile.value = null;
   usFile.value = null;
+  jpyCashFile.value = null;
+  foreignCashFile.value = null;
   if (domesticInputRef.value) {
     domesticInputRef.value.value = "";
   }
   if (usInputRef.value) {
     usInputRef.value.value = "";
   }
+  if (jpyCashInputRef.value) jpyCashInputRef.value.value = "";
+  if (foreignCashInputRef.value) foreignCashInputRef.value.value = "";
   resetPreviewState();
 }
 
-function clearSelectedFile(type: "domestic" | "us") {
+function clearSelectedFile(type: "domestic" | "us" | "jpyCash" | "foreignCash") {
   if (type === "domestic") {
     domesticFile.value = null;
     if (domesticInputRef.value) {
       domesticInputRef.value.value = "";
     }
-  } else {
+  } else if (type === "us") {
     usFile.value = null;
     if (usInputRef.value) {
       usInputRef.value.value = "";
     }
+  } else if (type === "jpyCash") {
+    jpyCashFile.value = null;
+    if (jpyCashInputRef.value) jpyCashInputRef.value.value = "";
+  } else {
+    foreignCashFile.value = null;
+    if (foreignCashInputRef.value) foreignCashInputRef.value.value = "";
   }
   resetPreviewState();
 }
 
-async function onFileChange(event: Event, type: "domestic" | "us") {
+async function onFileChange(event: Event, type: "domestic" | "us" | "jpyCash" | "foreignCash") {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) {
@@ -407,8 +534,12 @@ async function onFileChange(event: Event, type: "domestic" | "us") {
   const payload = await fileToPayload(file);
   if (type === "domestic") {
     domesticFile.value = payload;
-  } else {
+  } else if (type === "us") {
     usFile.value = payload;
+  } else if (type === "jpyCash") {
+    jpyCashFile.value = payload;
+  } else {
+    foreignCashFile.value = payload;
   }
   resetPreviewState();
 }
@@ -419,6 +550,13 @@ function formatCurrency(amount: number, currency: string): string {
     currency,
     maximumFractionDigits: currency === "JPY" ? 0 : 2,
   }).format(amount);
+}
+
+function formatCashAmount(item: CashActivity): string {
+  if (!item.currency) {
+    return `${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 }).format(item.amount)} ${t("imports.reportedAmount")}`;
+  }
+  return formatCurrency(item.amount, item.currency);
 }
 
 async function loadDuplicates(silent = false) {
@@ -455,15 +593,17 @@ async function handlePreview() {
     preview.value = await previewBrokerImport({
       domestic_report: domesticFile.value,
       us_report: usFile.value,
+      jpy_cash_report: jpyCashFile.value,
+      foreign_cash_report: foreignCashFile.value,
       position_group_jpy: positionGroupJpy.value,
       settlement_group_jpy: settlementGroupJpy.value,
       position_group_usd: positionGroupUsd.value,
       settlement_group_usd: settlementGroupUsd.value,
     });
     message.value = t("imports.previewSummary", {
-      count: preview.value.items.length,
-      applied: preview.value.applied_count,
-      skipped: preview.value.skipped_count,
+      count: preview.value.items.length + preview.value.cash_items.length,
+      applied: preview.value.applied_count + preview.value.applied_cash_count,
+      skipped: preview.value.skipped_count + preview.value.skipped_cash_count,
     });
   } catch (error) {
     emit("notify", { type: "error", message: error instanceof Error ? error.message : t("imports.errors.preview") });
@@ -478,6 +618,8 @@ async function handleApply() {
     preview.value = await applyBrokerImport({
       domestic_report: domesticFile.value,
       us_report: usFile.value,
+      jpy_cash_report: jpyCashFile.value,
+      foreign_cash_report: foreignCashFile.value,
       position_group_jpy: positionGroupJpy.value,
       settlement_group_jpy: settlementGroupJpy.value,
       position_group_usd: positionGroupUsd.value,
@@ -485,9 +627,10 @@ async function handleApply() {
       replace_existing_transactions: false,
     });
     lastAppliedTransactionIds.value = [...preview.value.applied_transaction_ids];
+    lastAppliedCashActivityIds.value = [...preview.value.applied_cash_activity_ids];
     const successMessage = t("imports.applyDone", {
-      count: preview.value.applied_count,
-      skipped: preview.value.skipped_count,
+      count: preview.value.applied_count + preview.value.applied_cash_count,
+      skipped: preview.value.skipped_count + preview.value.skipped_cash_count,
     });
     emit("notify", { type: "success", message: successMessage });
     message.value = successMessage;
@@ -569,7 +712,7 @@ async function handleDeleteSelectedDuplicates() {
 }
 
 async function handleUndoLastImport() {
-  const appliedCount = lastAppliedTransactionIds.value.length;
+  const appliedCount = lastAppliedCount.value;
   if (!appliedCount) {
     return;
   }
@@ -579,15 +722,18 @@ async function handleUndoLastImport() {
 
   pendingUndo.value = true;
   try {
-    const response = await deleteTransactionsBatch({
+    const response = await undoBrokerImport({
       transaction_ids: lastAppliedTransactionIds.value,
+      cash_activity_ids: lastAppliedCashActivityIds.value,
     });
     lastAppliedTransactionIds.value = [];
+    lastAppliedCashActivityIds.value = [];
     resetImportState();
-    message.value = t("imports.undo.done", { count: response.deleted_count });
+    const deletedCount = response.deleted_transaction_ids.length + response.deleted_cash_activity_ids.length;
+    message.value = t("imports.undo.done", { count: deletedCount });
     emit("notify", {
       type: "success",
-      message: t("imports.undo.done", { count: response.deleted_count }),
+      message: t("imports.undo.done", { count: deletedCount }),
     });
     await loadDuplicates(true);
     emit("imported");
@@ -603,15 +749,133 @@ async function handleUndoLastImport() {
 </script>
 
 <style scoped>
+.panel-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
 .import-form,
 .import-preview,
 .import-duplicates {
-  min-height: 100%;
+  min-height: 0;
+}
+
+.import-form {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border-color: #d8dcd6;
+  background: #f7f8f4;
+}
+
+.import-form > h3 {
+  margin: 0;
+  font: 500 18px/1.2 Georgia, "Noto Serif SC", serif;
+}
+
+.report-file-grid,
+.mapping-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.report-file-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mapping-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-file-grid label,
+.mapping-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-file-grid label > span,
+.mapping-grid label > span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.file-field {
+  position: relative;
+  min-height: 104px;
+  justify-content: space-between;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--panel);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.file-field:hover {
+  border-color: #8ba9a3;
+  background: #f1f7f4;
+}
+
+.file-field input[type="file"] {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.file-field input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 7px 9px;
+  border-color: #cbd8d4;
+  background: #e7f0ed;
+  color: #155c55;
+  font-size: 11px;
+}
+
+.mapping-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+.mapping-header span {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.mapping-header small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.mapping-grid :deep(.base-select) {
+  min-width: 0;
 }
 
 .import-undo,
-.import-duplicates {
+.import-duplicates,
+.import-cash-preview,
+.import-cash-ledger {
   margin-top: 1rem;
+}
+
+.ledger-link {
+  display: inline-flex;
+  padding: 0.22rem 0.5rem;
+  border-radius: 6px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .import-form .form-actions,
@@ -621,12 +885,9 @@ async function handleUndoLastImport() {
   flex-wrap: wrap;
 }
 
-.file-field {
-  justify-content: flex-start;
-}
-
 .selected-files {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.7rem;
 }
 
@@ -641,10 +902,41 @@ async function handleUndoLastImport() {
 }
 
 .selected-file {
-  padding: 0.85rem 1rem;
+  padding: 0.5rem 0.65rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--divider);
   background: var(--panel-soft);
+}
+
+.import-preview,
+.import-cash-preview,
+.import-cash-ledger,
+.import-duplicates {
+  background: rgba(255, 255, 255, 0.76);
+}
+
+@media (max-width: 980px) {
+  .report-file-grid,
+  .mapping-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .panel-grid {
+    padding: 0 10px 10px;
+  }
+
+  .report-file-grid,
+  .mapping-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mapping-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 .duplicate-group {

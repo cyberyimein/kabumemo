@@ -1,11 +1,14 @@
 <template>
-  <section class="positions-panel surface-panel">
+  <section class="positions-panel surface-panel app-panel">
     <header class="panel-header">
       <div>
         <h2>{{ t("positions.title") }}</h2>
         <p>{{ t("positions.description") }}</p>
       </div>
       <div class="header-actions">
+        <button type="button" class="ghost-button" :disabled="splitDetectionLoading" @click="runSplitDetection">
+          {{ splitDetectionLoading ? t("positions.splitDetection.loading") : t("positions.splitDetection.action") }}
+        </button>
         <button
           type="button"
           class="primary-btn"
@@ -23,9 +26,76 @@
       </div>
     </header>
 
+    <section v-if="splitDetectionOpen" class="split-detection">
+      <div class="split-detection__header">
+        <div>
+          <h3>{{ t("positions.splitDetection.title") }}</h3>
+          <p>{{ t("positions.splitDetection.description") }}</p>
+        </div>
+        <button type="button" class="ghost-button" @click="splitDetectionOpen = false">{{ t("common.actions.close") }}</button>
+      </div>
+      <p v-if="splitDetectionError" class="split-detection__error">{{ splitDetectionError }}</p>
+      <template v-else-if="splitDetectionResult">
+        <p class="split-detection__summary">
+          {{ t("positions.splitDetection.summary", { count: splitDetectionResult.scanned_symbols, candidates: splitDetectionResult.candidates.length }) }}
+        </p>
+        <p v-if="splitDetectionResult.failed_symbols.length" class="split-detection__warning">
+          {{ t("positions.splitDetection.failed", { symbols: splitDetectionResult.failed_symbols.join(', ') }) }}
+        </p>
+        <div v-if="splitDetectionResult.candidates.length" class="table-scroll split-table">
+          <table>
+            <thead><tr>
+              <th>{{ t("positions.table.symbol") }}</th>
+              <th>{{ t("positions.splitDetection.date") }}</th>
+              <th>{{ t("positions.splitDetection.ratio") }}</th>
+              <th class="numeric">{{ t("positions.splitDetection.before") }}</th>
+              <th class="numeric">{{ t("positions.splitDetection.after") }}</th>
+              <th></th>
+            </tr></thead>
+            <tbody><tr v-for="candidate in splitDetectionResult.candidates" :key="`${candidate.symbol}-${candidate.effective_date}`">
+              <td><strong>{{ candidate.symbol }}</strong></td>
+              <td>{{ candidate.effective_date }}</td>
+              <td>1 : {{ formatNumber(candidate.ratio_after) }}</td>
+              <td class="numeric">{{ formatNumber(candidate.quantity_before) }}</td>
+              <td class="numeric"><input v-model.number="candidate.suggested_quantity_after" class="quantity-correction" type="number" min="0" step="0.000001" /></td>
+              <td class="numeric"><button type="button" class="primary-btn" :disabled="registeringSplitKey === splitCandidateKey(candidate)" @click="registerSplitCandidate(candidate)">{{ t("positions.splitDetection.apply") }}</button></td>
+            </tr></tbody>
+          </table>
+        </div>
+        <p v-else class="split-detection__empty">{{ t("positions.splitDetection.empty") }}</p>
+      </template>
+    </section>
+
     <p v-if="quotes?.as_of" class="quotes-meta">
       {{ t("positions.quotesAsOf", { date: quotes.as_of }) }}
     </p>
+
+    <div class="position-kpis">
+      <article>
+        <span>{{ t("positions.summary.open") }}</span>
+        <strong>{{ activePositions.length }}</strong>
+        <small>{{ t("positions.summary.closed", { count: closedPositions.length }) }}</small>
+      </article>
+      <article>
+        <span>{{ t("positions.summary.jp") }}</span>
+        <strong>{{ jpPositionCount }}</strong>
+        <small>Tokyo Stock Exchange</small>
+      </article>
+      <article>
+        <span>{{ t("positions.summary.us") }}</span>
+        <strong>{{ usPositionCount }}</strong>
+        <small>NYSE / NASDAQ</small>
+      </article>
+      <article class="position-kpis__wide">
+        <span>{{ t("positions.summary.unrealized") }}</span>
+        <div class="currency-results">
+          <strong v-for="item in unrealizedByCurrency" :key="item.currency" :class="valueClass(item.value)">
+            {{ formatCurrencyValue(item.value, item.currency) }}
+          </strong>
+        </div>
+        <small>{{ t("positions.summary.marketValueHint") }}</small>
+      </article>
+    </div>
 
     <div v-if="selectedPosition" class="selection-details selection-details--position">
       <div class="selection-details__header">
@@ -51,53 +121,49 @@
     </div>
 
     <div class="surface-group">
-      <section class="surface">
-        <h3>{{ t("positions.activeTitle", { count: activePositions.length }) }}</h3>
+      <section class="surface positions-ledger">
+        <div class="ledger-heading">
+          <h3>{{ t("positions.activeTitle", { count: activePositions.length }) }}</h3>
+          <span>{{ t("positions.selectionHint") }}</span>
+        </div>
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
-                <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.cost") }}</th>
                 <th class="numeric">{{ t("positions.table.price") }}</th>
                 <th class="numeric">{{ t("positions.table.unrealized") }}</th>
-                <th>{{ t("common.labels.tags") }}</th>
+                <th>{{ t("positions.table.source") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!activePositions.length">
-                <td colspan="7" class="empty">{{ t("positions.emptyActive") }}</td>
+                <td colspan="6" class="empty">{{ t("positions.emptyActive") }}</td>
               </tr>
               <tr
                 v-for="item in pagedActivePositions"
                 :key="rowKey(item)"
                 :class="['position-row', { selected: isSelected(item) }]"
+                tabindex="0"
                 @click="handleRowClick(item)"
+                @keydown.enter.prevent="handleRowClick(item)"
               >
-                  <td class="select-column" @click.stop>
-                    <input
-                      type="radio"
-                      name="position-select"
-                      :checked="isSelected(item)"
-                      @change="selectPosition(item)"
-                    />
-                  </td>
                   <td>
                     <div class="symbol-cell">
-                      <span>{{ item.symbol }}</span>
+                      <span class="market-dot" :class="`market-dot--${item.market.toLowerCase()}`"></span>
+                      <div><strong>{{ item.symbol }}</strong><small>{{ marketLabel(item.market) }}</small></div>
                     </div>
                   </td>
                   <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
                   <td class="numeric">{{ formatAverageCostBreakdown(item.breakdown) }}</td>
                   <td class="numeric">{{ formatPriceBreakdown(item.breakdown) }}</td>
-                  <td :class="['numeric', profitClass(item.breakdown)]">
+                  <td :class="['numeric', unrealizedClass(item.breakdown)]">
                     {{ formatUnrealizedBreakdown(item.breakdown) }}
                   </td>
                   <td>
                     <div class="inline-tags">
-                      <span class="flat-tag">{{ marketLabel(item.market) }}</span>
                       <span class="flat-tag">{{ item.group_breakdown.length }} {{ t("positions.groupTable.group") }}</span>
                     </div>
                   </td>
@@ -114,40 +180,40 @@
         />
       </section>
 
-      <section class="surface">
-        <h3>{{ t("positions.closedTitle", { count: closedPositions.length }) }}</h3>
+      <section class="surface closed-section">
+        <div class="closed-section__header">
+          <h3>{{ t("positions.closedTitle", { count: closedPositions.length }) }}</h3>
+          <button type="button" class="ghost-button" @click="showClosed = !showClosed">
+            {{ showClosed ? t("positions.actions.collapseClosed") : t("positions.actions.expandClosed") }}
+          </button>
+        </div>
+        <template v-if="showClosed">
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
-                <th class="select-column"></th>
                 <th>{{ t("positions.table.symbol") }}</th>
                 <th class="numeric">{{ t("positions.table.quantity") }}</th>
                 <th class="numeric">{{ t("positions.table.pl") }}</th>
-                <th>{{ t("common.labels.tags") }}</th>
+                <th>{{ t("positions.table.source") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!closedPositions.length">
-                <td colspan="5" class="empty">{{ t("positions.emptyClosed") }}</td>
+                <td colspan="4" class="empty">{{ t("positions.emptyClosed") }}</td>
               </tr>
               <tr
                 v-for="item in pagedClosedPositions"
                 :key="rowKey(item)"
                 :class="['position-row', { selected: isSelected(item) }]"
+                tabindex="0"
                 @click="handleRowClick(item)"
+                @keydown.enter.prevent="handleRowClick(item)"
               >
-                  <td class="select-column" @click.stop>
-                    <input
-                      type="radio"
-                      name="position-select"
-                      :checked="isSelected(item)"
-                      @change="selectPosition(item)"
-                    />
-                  </td>
                   <td>
                     <div class="symbol-cell">
-                      <span>{{ item.symbol }}</span>
+                      <span class="market-dot" :class="`market-dot--${item.market.toLowerCase()}`"></span>
+                      <div><strong>{{ item.symbol }}</strong><small>{{ marketLabel(item.market) }}</small></div>
                     </div>
                   </td>
                   <td class="numeric">{{ formatQuantityBreakdown(item.breakdown) }}</td>
@@ -156,7 +222,6 @@
                   </td>
                   <td>
                     <div class="inline-tags">
-                      <span class="flat-tag">{{ marketLabel(item.market) }}</span>
                       <span class="flat-tag">{{ item.group_breakdown.length }} {{ t("positions.groupTable.group") }}</span>
                     </div>
                   </td>
@@ -171,6 +236,7 @@
           :total-items="closedTotalItems"
           @update:page="setClosedPage"
         />
+        </template>
       </section>
     </div>
   </section>
@@ -206,20 +272,29 @@ import * as echarts from "echarts";
 
 import PaginationControls from "./ui/PaginationControls.vue";
 import { usePagination } from "@/composables/usePagination";
-import { ApiError, getPositionHistory } from "@/services/api";
+import { ApiError, detectStockSplits, getPositionHistory } from "@/services/api";
 import type {
   Position,
   PositionBreakdown,
   PositionGroupBreakdown,
   PositionHistoryResponse,
   QuoteSnapshot,
+  StockSplitCandidate,
+  StockSplitDetectionResponse,
+  StockSplitPayload,
 } from "@/types/api";
 
 const props = defineProps<{ positions: Position[]; quotes?: QuoteSnapshot | null }>();
 
-defineEmits<{
+type StockSplitRegistrationEvent = {
+  data: StockSplitPayload;
+  onDone: (success: boolean) => void;
+};
+
+const emit = defineEmits<{
   (e: "refresh"): void;
   (e: "refresh-quotes"): void;
+  (e: "register-split", payload: StockSplitRegistrationEvent): void;
 }>();
 
 const { t } = useI18n();
@@ -229,6 +304,20 @@ function hasOpenQuantity(position: Position): boolean {
 }
 
 const activePositions = computed(() => props.positions.filter(hasOpenQuantity));
+const showClosed = ref(false);
+const jpPositionCount = computed(() => activePositions.value.filter((item) => item.market === "JP").length);
+const usPositionCount = computed(() => activePositions.value.filter((item) => item.market === "US").length);
+const unrealizedByCurrency = computed(() => {
+  const totals = new Map<string, number>();
+  activePositions.value.forEach((position) => position.breakdown.forEach((entry) => {
+    totals.set(entry.currency, (totals.get(entry.currency) ?? 0) + (entry.unrealized_pl ?? 0));
+  }));
+  return Array.from(totals, ([currency, value]) => ({ currency: currency as "JPY" | "USD", value }));
+});
+
+function valueClass(value: number): string {
+  return value > 0 ? "positive" : value < 0 ? "negative" : "";
+}
 
 const {
   page: activePage,
@@ -260,6 +349,11 @@ const pagedClosedPositions = computed(() =>
 
 const selectedKey = ref<string | null>(null);
 const selectedPosition = ref<Position | null>(null);
+const splitDetectionOpen = ref(false);
+const splitDetectionLoading = ref(false);
+const splitDetectionError = ref<string | null>(null);
+const splitDetectionResult = ref<StockSplitDetectionResponse | null>(null);
+const registeringSplitKey = ref<string | null>(null);
 const historyOpen = ref(false);
 const historyLoading = ref(false);
 const historyError = ref<string | null>(null);
@@ -314,6 +408,49 @@ function asErrorMessage(error: unknown): string {
     return error.message;
   }
   return t("common.states.error");
+}
+
+function splitCandidateKey(candidate: StockSplitCandidate): string {
+  return `${candidate.symbol}-${candidate.market}-${candidate.effective_date}`;
+}
+
+async function runSplitDetection(): Promise<void> {
+  splitDetectionOpen.value = true;
+  splitDetectionLoading.value = true;
+  splitDetectionError.value = null;
+  try {
+    splitDetectionResult.value = await detectStockSplits();
+  } catch (error: unknown) {
+    splitDetectionError.value = asErrorMessage(error);
+  } finally {
+    splitDetectionLoading.value = false;
+  }
+}
+
+function registerSplitCandidate(candidate: StockSplitCandidate): void {
+  if (candidate.quantity_before <= 0 || candidate.suggested_quantity_after <= 0) {
+    splitDetectionError.value = t("positions.splitDetection.invalidQuantity");
+    return;
+  }
+  const key = splitCandidateKey(candidate);
+  registeringSplitKey.value = key;
+  emit("register-split", {
+    data: {
+      symbol: candidate.symbol,
+      market: candidate.market,
+      effective_date: candidate.effective_date,
+      ratio_before: 1,
+      ratio_after: candidate.suggested_quantity_after / candidate.quantity_before,
+      notes: t("positions.splitDetection.recordNote"),
+    },
+    onDone: (success: boolean) => {
+      registeringSplitKey.value = null;
+      if (!success || !splitDetectionResult.value) return;
+      splitDetectionResult.value.candidates = splitDetectionResult.value.candidates.filter(
+        (item) => splitCandidateKey(item) !== key
+      );
+    },
+  });
 }
 
 async function openHistory(): Promise<void> {
@@ -542,6 +679,11 @@ function profitClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
   };
 }
 
+function unrealizedClass(breakdown: PositionBreakdown[]): Record<string, boolean> {
+  const total = breakdown.reduce((sum, entry) => sum + (entry.unrealized_pl ?? 0), 0);
+  return { positive: total > 1e-2, negative: total < -1e-2 };
+}
+
 function marketLabel(value: string): string {
   return value === "US"
     ? t("common.toggle.market.us")
@@ -613,6 +755,44 @@ function marketLabel(value: string): string {
   font-size: 0.85rem;
 }
 
+.split-detection { display: grid; gap: .9rem; padding: 1.15rem 1.25rem; border: 1px solid var(--divider); background: #fff; }
+.split-detection__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.split-detection__header h3 { font-size: 1rem; }
+.split-detection__header p { margin-top: .3rem; color: var(--text-dim); font-size: .84rem; }
+.split-detection__summary, .split-detection__empty { color: var(--text-dim); font-size: .84rem; }
+.split-detection__warning { color: var(--accent-warm); font-size: .82rem; }
+.split-detection__error { color: var(--accent-red); font-size: .84rem; }
+.split-table { border-radius: 0; }
+.quantity-correction { width: 8rem; height: 36px; padding: 0 .65rem; border: 1px solid var(--divider-bold); border-radius: 6px; background: var(--panel); color: var(--text); text-align: right; font: inherit; font-variant-numeric: tabular-nums; }
+
+.position-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 0.7fr)) minmax(280px, 1.5fr);
+  gap: 0.75rem;
+}
+
+.position-kpis article {
+  display: flex;
+  min-height: 104px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.position-kpis span,
+.position-kpis small { color: var(--text-faint); font-size: 0.78rem; }
+.position-kpis strong { font-size: 1.65rem; font-variant-numeric: tabular-nums; }
+.currency-results { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+.currency-results strong { font-size: 1.25rem; }
+.closed-section__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+
+@media (max-width: 900px) {
+  .position-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+
 .panel-header h2 {
   font-size: 1.3rem;
   letter-spacing: 0.5px;
@@ -636,6 +816,11 @@ function marketLabel(value: string): string {
   gap: 1.1rem;
   min-height: 100%;
 }
+
+.positions-ledger { padding: 0; overflow: hidden; gap: 0; }
+.ledger-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.25rem; }
+.ledger-heading span { color: var(--text-faint); font-size: .78rem; }
+.positions-ledger .table-scroll { border-width: 1px 0 0; border-radius: 0; }
 
 .surface h3 {
   font-size: 1rem;
@@ -666,7 +851,7 @@ function marketLabel(value: string): string {
 
 .table-scroll th,
 .table-scroll td {
-  padding: 0.8rem 1rem;
+  padding: 0.72rem 1rem;
   border-bottom: 1px solid var(--divider);
   font-size: 0.95rem;
   color: var(--text);
@@ -699,6 +884,9 @@ function marketLabel(value: string): string {
   cursor: pointer;
 }
 
+.position-row { outline: none; transition: background var(--transition), box-shadow var(--transition); }
+.position-row:focus-visible { box-shadow: inset 3px 0 var(--focus-ring); }
+
 .position-row.selected {
   background: rgba(30, 156, 90, 0.06);
   box-shadow: inset 0 0 0 1px rgba(30, 156, 90, 0.24);
@@ -709,6 +897,12 @@ function marketLabel(value: string): string {
   align-items: center;
   gap: 0.6rem;
 }
+
+.symbol-cell > div { display: grid; gap: .1rem; }
+.symbol-cell strong { font-size: .94rem; letter-spacing: .01em; }
+.symbol-cell small { color: var(--text-faint); font-size: .7rem; }
+.market-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.market-dot--us { background: #315f78; box-shadow: 0 0 0 3px rgba(49,95,120,.12); }
 
 .selection-details {
   display: grid;

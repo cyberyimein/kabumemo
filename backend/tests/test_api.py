@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -402,6 +401,185 @@ def test_broker_import_rebuilds_realized_pnl(client: TestClient):
     assert realized_records[0]["realized_pl"] == pytest.approx(1250)
 
 
+def test_cash_report_import_links_jpy_and_foreign_transfer_and_skips_duplicates(
+    client: TestClient,
+):
+    import base64
+
+    jpy_csv = """
+円貨入出金明細
+
+入出金日,取引,区分,摘要,出金額,入金額
+2026/07/10,出金,その他,米国株式買付代金,78423,0
+2026/07/09,出金,その他,譲渡益税源泉徴収金,442,0
+2026/07/08,入金,金融機関からの入金,即時入金　三井住友銀行,0,100000
+""".strip()
+    foreign_csv = """
+外貨入出金明細
+
+入出金日,取引,区分,通貨,摘要,出金額,入金額
+2026/07/10,入金,-,-,入出金振替,0,78423.00
+2026/07/01,入金,配当金,米ドル,NVDA 銘柄名:エヌビディア,0,1.13
+""".strip()
+
+    payload = {
+        "jpy_cash_report": {
+            "file_name": "jpy-cash.csv",
+            "content_base64": base64.b64encode(jpy_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+        "foreign_cash_report": {
+            "file_name": "foreign-cash.csv",
+            "content_base64": base64.b64encode(foreign_csv.encode("utf-8")).decode("ascii"),
+            "encoding_hint": "utf-8",
+        },
+    }
+
+    preview = client.post("/api/imports/broker/preview", json=payload)
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert len(body["cash_items"]) == 5
+    assert body["applied_cash_count"] == 5
+    linked = [item for item in body["cash_items"] if item["link_group_id"]]
+    assert len(linked) == 2
+    assert linked[0]["linked_activity_id"] == linked[1]["id"]
+    assert linked[1]["linked_activity_id"] == linked[0]["id"]
+    foreign_transfer = next(item for item in linked if item["description"] == "入出金振替")
+    assert foreign_transfer["currency"] is None
+    tax = next(item for item in body["cash_items"] if "税" in item["description"])
+    assert tax["category"] == "tax"
+
+    first = client.post("/api/imports/broker/apply", json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["applied_cash_count"] == 5
+    second = client.post("/api/imports/broker/apply", json=payload)
+    assert second.status_code == 200, second.text
+    assert second.json()["applied_cash_count"] == 0
+    assert second.json()["skipped_cash_count"] == 5
+
+    ledger = client.get("/api/cash-activities")
+    assert ledger.status_code == 200
+    assert len(ledger.json()) == 5
+
+    funds = client.get("/api/funds")
+    assert funds.status_code == 200, funds.text
+    by_currency = {item["currency"]: item for item in funds.json()["aggregated"]}
+    assert by_currency["JPY"]["initial_amount"] == pytest.approx(100000)
+    assert by_currency["JPY"]["cash_balance"] == pytest.approx(99558)
+    assert by_currency["JPY"]["total_pl"] == pytest.approx(-442)
+    assert by_currency["USD"]["cash_balance"] == pytest.approx(1.13)
+    assert by_currency["USD"]["total_pl"] == pytest.approx(1.13)
+
+
+def test_cash_only_replace_preserves_transactions_and_other_cash_currency(client: TestClient):
+    import base64
+
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "trade_date": "2026-07-01",
+            "symbol": "7203.T",
+            "quantity": 1,
+            "gross_amount": 2500,
+            "funding_group": "JPY",
+            "cash_currency": "JPY",
+            "market": "JP",
+        },
+    )
+    assert transaction.status_code == 201
+
+    foreign_csv = """
+外貨入出金明細
+
+入出金日,取引,区分,通貨,摘要,出金額,入金額
+2026/07/01,入金,配当金,米ドル,NVDA 配当,0,1.13
+""".strip()
+    jpy_csv = """
+円貨入出金明細
+
+入出金日,取引,区分,摘要,出金額,入金額
+2026/07/08,入金,金融機関からの入金,即時入金,0,100000
+""".strip()
+    encode = lambda value: base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+    first = client.post(
+        "/api/imports/broker/apply",
+        json={
+            "foreign_cash_report": {
+                "file_name": "foreign.csv",
+                "content_base64": encode(foreign_csv),
+                "encoding_hint": "utf-8",
+            }
+        },
+    )
+    assert first.status_code == 200, first.text
+
+    replaced = client.post(
+        "/api/imports/broker/apply",
+        json={
+            "jpy_cash_report": {
+                "file_name": "jpy.csv",
+                "content_base64": encode(jpy_csv),
+                "encoding_hint": "utf-8",
+            },
+            "replace_existing_transactions": True,
+        },
+    )
+    assert replaced.status_code == 200, replaced.text
+    assert len(client.get("/api/transactions").json()) == 1
+    cash = client.get("/api/cash-activities").json()
+    assert len(cash) == 2
+    assert {item["currency"] for item in cash} == {"JPY", "USD"}
+
+
+def test_broker_import_undo_removes_transactions_and_cash_activities(client: TestClient):
+    import base64
+
+    domestic_csv = """
+約定履歴照会
+
+約定日,銘柄,銘柄コード,市場,取引,期限,預り,課税,約定数量,約定単価,手数料/諸経費等,税額,受渡日,受渡金額/決済損益
+2026/07/15,ＮＴＴ,9432,東証,株式現物買,--,特定,--,10,150,--,--,2026/07/17,1500
+""".strip()
+    jpy_csv = """
+円貨入出金明細
+
+入出金日,取引,区分,摘要,出金額,入金額
+2026/07/08,入金,金融機関からの入金,即時入金,0,100000
+""".strip()
+    encode = lambda value: base64.b64encode(value.encode("utf-8")).decode("ascii")
+    applied = client.post(
+        "/api/imports/broker/apply",
+        json={
+            "domestic_report": {
+                "file_name": "domestic.csv",
+                "content_base64": encode(domestic_csv),
+                "encoding_hint": "utf-8",
+            },
+            "jpy_cash_report": {
+                "file_name": "jpy.csv",
+                "content_base64": encode(jpy_csv),
+                "encoding_hint": "utf-8",
+            },
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    body = applied.json()
+
+    undone = client.post(
+        "/api/imports/broker/undo",
+        json={
+            "transaction_ids": body["applied_transaction_ids"],
+            "cash_activity_ids": body["applied_cash_activity_ids"],
+        },
+    )
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["deleted_transaction_ids"] == body["applied_transaction_ids"]
+    assert undone.json()["deleted_cash_activity_ids"] == body["applied_cash_activity_ids"]
+    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/cash-activities").json() == []
+
+
 def test_broker_import_preview_respects_distinct_group_mapping(client: TestClient):
     import base64
 
@@ -680,6 +858,54 @@ def test_stock_split_endpoint_rebuilds_positions_and_realized_pnl(client: TestCl
     assert realized_record["unmatched_quantity"] == pytest.approx(0)
     assert realized_record["cost_basis"] == pytest.approx(188320)
     assert realized_record["realized_pl"] == pytest.approx(16430)
+
+
+def test_stock_split_detection_returns_unrecorded_corporate_action(client: TestClient, monkeypatch):
+    from datetime import date
+
+    import app.services.split_detection as split_detection
+
+    buy_payload = {
+        "trade_date": "2025-01-10",
+        "symbol": "8001",
+        "quantity": 20,
+        "gross_amount": 188320,
+        "funding_group": "JPY",
+        "cash_currency": "JPY",
+        "market": "JP",
+    }
+    assert client.post("/api/transactions", json=buy_payload).status_code == 201
+
+    monkeypatch.setattr(
+        split_detection,
+        "_fetch_split_events",
+        lambda symbol, start: [(date(2025, 12, 31), 5.0)],
+    )
+    response = client.post("/api/stock-splits/detect")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["scanned_symbols"] == 1
+    assert body["failed_symbols"] == []
+    assert len(body["candidates"]) == 1
+    candidate = body["candidates"][0]
+    assert candidate["symbol"] == "8001.T"
+    assert candidate["ratio_after"] == 5
+    assert candidate["quantity_before"] == 20
+    assert candidate["suggested_quantity_after"] == 100
+
+    assert client.post(
+        "/api/stock-splits",
+        json={
+            "symbol": "8001",
+            "market": "JP",
+            "effective_date": "2025-12-31",
+            "ratio_before": 1,
+            "ratio_after": 5,
+        },
+    ).status_code == 201
+    second_response = client.post("/api/stock-splits/detect")
+    assert second_response.status_code == 200
+    assert second_response.json()["candidates"] == []
 
 
 def test_realized_pnl_rebuild_applies_stock_split_before_sell():

@@ -48,6 +48,7 @@ def main() -> None:
     settlements = len(repository.list_tax_settlements_from_sqlite())
     exchanges = len(repository.list_fx_exchanges_from_sqlite())
     quotes = len(repository.list_quotes_from_sqlite())
+    cash_activities = len(repository.list_cash_activities_from_sqlite())
 
     print(
         "Imported data into SQLite database at",
@@ -64,6 +65,8 @@ def main() -> None:
         exchanges,
         "Quotes:",
         quotes,
+        "Cash activities:",
+        cash_activities,
     )
 
 

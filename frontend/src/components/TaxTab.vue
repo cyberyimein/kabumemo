@@ -1,5 +1,5 @@
 <template>
-  <section class="tax-panel surface-panel">
+  <section class="tax-panel surface-panel app-panel">
     <header class="panel-header">
       <div>
         <h2>{{ t("tax.title") }}</h2>

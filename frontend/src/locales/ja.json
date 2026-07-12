@@ -1,8 +1,8 @@
 {
   "app": {
     "header": {
-  "title": "株式取引記録ツール",
-      "tagline": "取引・保有・資金・税務をローカルで管理します。"
+  "title": "Kabumemo",
+      "tagline": "証券レポートを基準にしたローカル投資台帳"
     },
     "language": {
       "label": "表示言語"
@@ -39,6 +39,7 @@
         "fx": "換金記録",
         "fxMeta": "独立 FX レコード",
         "tax": "未精算税務",
+        "cash": "入出金明細",
         "taxMeta": "非 NISA 売却"
       }
     },
@@ -55,7 +56,7 @@
     "transactions": "取引",
     "positions": "ポジション",
     "funds": "資金",
-    "import": "取込",
+    "import": "レポート",
     "tax": "納税"
   },
   "common": {
@@ -141,13 +142,15 @@
     },
   "submit": "取引を登録",
   "update": "変更を保存",
-  "editingHint": "既存の取引を編集中です。保存すると更新、キャンセルでクイック入力に戻ります。",
+    "editingHint": "既存の取引を編集中です。保存すると更新、キャンセルでクイック入力に戻ります。",
+    "manual": { "open": "手動補正", "close": "入力を閉じる", "hint": "レポートにない取引や例外の修正にのみ使用します" },
     "historyTitle": "取引履歴 ({count})",
     "table": {
       "date": "日付",
       "symbol": "銘柄",
       "quantity": "数量",
       "amount": "金額",
+      "details": "決済",
       "fundingGroup": "資金グループ",
       "currency": "通貨",
       "market": "市場",
@@ -215,10 +218,13 @@
     "description": "取引から残高、平均取得単価、実現損益を計算します。",
     "actions": {
       "refreshQuotes": "株価更新",
-      "viewHistory": "価格推移"
+      "viewHistory": "価格推移", "expandClosed": "解消済みを表示", "collapseClosed": "解消済みを隠す"
     },
+    "summary": { "open": "保有中", "closed": "解消済み {count}", "jp": "日本株", "us": "米国株", "unrealized": "通貨別含み損益", "marketValueHint": "円とドルは分けて表示" },
     "quotesAsOf": "株価更新日：{date}",
+    "splitDetection": { "action": "株式分割を検出", "loading": "検出中…", "title": "株式分割候補", "description": "価格変動ではなく明示されたコーポレートアクションを使用します。適用前に修正後数量を編集できます。", "summary": "{count} 銘柄を確認し、未登録イベントを {candidates} 件検出しました。", "failed": "コーポレートアクションを取得できない銘柄：{symbols}", "date": "効力発生日", "ratio": "公表比率", "before": "修正前数量", "after": "修正後数量", "apply": "修正を適用", "empty": "未登録の株式分割は見つかりませんでした。", "invalidQuantity": "修正後数量は 0 より大きくしてください。", "recordNote": "ポジションの株式分割検出で確認" },
     "activeTitle": "保有中 ({count})",
+    "selectionHint": "行を選択すると資金グループ明細と価格推移を表示します",
     "closedTitle": "解消済み ({count})",
     "table": {
       "symbol": "銘柄",
@@ -228,6 +234,7 @@
       "pl": "実現損益",
       "price": "現在値",
       "unrealized": "含み損益"
+      ,"source": "資金元"
     },
     "groupTable": {
       "group": "資金グループ"
@@ -246,7 +253,7 @@
   },
   "funds": {
     "title": "資金と資金グループ",
-    "description": "資金グループを管理し、残高を確認します。",
+    "description": "証券会社レポートから円・ドル口座と入出金履歴を確認します。",
     "formTitle": "資金グループを追加",
     "fields": {
       "name": "名称",
@@ -261,8 +268,10 @@
     "submit": "資金グループを作成",
     "listTitle": "資金グループ ({count})",
     "actions": {
-      "addCapital": "資金を追加"
+      "addCapital": "資金を追加", "settings": "資金グループ設定", "closeSettings": "設定を閉じる", "advanced": "詳細メンテナンス", "closeAdvanced": "詳細を閉じる"
     },
+    "overview": { "brokerAccount": "証券資金口座" },
+    "cashLedger": { "title": "入出金履歴", "description": "証券会社レポートから再構成した {count} 件。円とドルを分け、関連振替は自動連携します。", "date": "日付", "type": "取引区分", "descriptionColumn": "摘要", "amount": "金額", "empty": "入出金レポートをインポートしてください" },
     "table": {
       "name": "名称",
       "currency": "通貨",
@@ -469,14 +478,18 @@
   },
   "imports": {
     "title": "証券レポート取込",
-    "description": "日本株と米国株のレポートをアップロードし、取引を高速一括取込します。重複は自動でスキップされます。",
+    "description": "証券会社の約定・円貨・外貨レポートをまとめて確認し、連携・重複除外して取り込みます。",
     "formTitle": "レポートファイルを選択",
+    "mappingTitle": "台帳マッピング",
+    "mappingHint": "通常は既定値のままで構いません。複数資金グループの場合のみ変更します。",
     "runtimeTarget": "この取込は、realdata バックアップではなく、実行中アプリが参照する data ディレクトリへ直接書き込みます。",
     "applyHint": "取込を適用すると新規取引を高速追加し、既存の重複データは自動でスキップします。",
     "previewHint": "プレビューはアップロード済みレポートと現在の資金グループ設定から生成されます。",
     "fields": {
       "domestic": "日本株 CSV",
       "us": "米国株 CSV",
+      "jpyCash": "円貨入出金明細 CSV",
+      "foreignCash": "外貨入出金明細 CSV",
       "jpyPositionGroup": "JPY 保有元グループ",
       "jpySettlementGroup": "JPY 受渡グループ",
       "usdPositionGroup": "USD 保有元グループ",
@@ -490,9 +503,20 @@
     },
     "selectedFile": "{label}: {file}",
     "previewTitle": "取込プレビュー ({count})",
+    "cashPreviewTitle": "入出金プレビュー ({count})",
+    "cashPreviewDescription": "同日・同額の円貨と外貨の振替を自動で関連付け、二重計上を防ぎます。",
+    "cashLedgerTitle": "取込済み入出金 ({count})",
+    "cashLedgerDescription": "直近100件を表示します。税金も入出金明細として管理します。",
+    "cashLedgerEmpty": "入出金レポートはまだありません。",
+    "cashEmpty": "円貨または外貨レポートを選択するとプレビューできます。",
+    "cashLinked": "連携済み",
+    "reportedAmount": "レポート原値",
+    "cashDirection": { "in": "入金", "out": "出金" },
+    "cashCategory": { "external_transfer": "外部入出金", "internal_transfer": "内部連携", "trade_settlement": "取引決済", "dividend": "配当/分配金", "tax": "税金", "investment": "投信", "fx": "為替", "other": "その他" },
+    "cashTable": { "date": "日付", "flow": "方向", "category": "分類", "description": "摘要", "amount": "金額", "link": "連携" },
     "previewReady": "{count} 件のプレビューを生成しました。",
     "previewSummary": "{count} 件のプレビューを生成しました。このまま取り込まれるのは {applied} 件、重複でスキップされるのは {skipped} 件です。",
-    "applyDone": "{count} 件の取引を取り込み、{skipped} 件の重複をスキップしました。",
+    "applyDone": "{count} 件のレポート記録を取り込み、{skipped} 件の重複をスキップしました。",
     "undo": {
       "title": "直前の取込を取り消す",
       "description": "誤って取り込んだ場合は、直前に追加した {count} 件の取引をまとめて削除できます。",

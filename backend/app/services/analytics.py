@@ -9,6 +9,9 @@ from uuid import uuid4
 from ..models.schemas import (
     AggregatedFundSnapshot,
     AnnualTaxSettlement,
+    CashActivity,
+    CashActivityCategory,
+    CashDirection,
     Currency,
     FxExchangeRecord,
     FundSnapshot,
@@ -368,6 +371,7 @@ def compute_fund_snapshots(
     fx_exchanges: Iterable[FxExchangeRecord] | None = None,
     stock_splits: Iterable[StockSplitRecord] | None = None,
     realized_pnl_records: Iterable[RealizedPnLRecord] | None = None,
+    cash_activities: Iterable[CashActivity] | None = None,
 ) -> FundSnapshots:
     group_lookup = {group.name: group for group in funding_groups}
     fx_records = list(fx_exchanges or [])
@@ -384,6 +388,19 @@ def compute_fund_snapshots(
     settlements = list(tax_settlements or [])
     annual_settlements = list(annual_tax_settlements or [])
     adjustments = list(capital_adjustments or [])
+    cash_records = list(cash_activities or [])
+    groups_by_currency: dict[Currency, list[str]] = defaultdict(list)
+    for name, group in group_lookup.items():
+        groups_by_currency[group.currency].append(name)
+
+    def cash_activity_group(item: CashActivity) -> str | None:
+        if item.currency is None:
+            return None
+        candidates = groups_by_currency.get(item.currency, [])
+        if item.currency.value in candidates:
+            return item.currency.value
+        return candidates[0] if len(candidates) == 1 else None
+
     adjustments_by_group: dict[str, list[FundingCapitalAdjustment]] = defaultdict(list)
     for adjustment in adjustments:
         adjustments_by_group[adjustment.funding_group].append(adjustment)
@@ -396,6 +413,7 @@ def compute_fund_snapshots(
 
     def calculate_state(until: date | None) -> dict[str, dict[str, float]]:
         cash_flows: defaultdict[str, float] = defaultdict(float)
+        report_contributions: defaultdict[str, float] = defaultdict(float)
         inventories: dict[str, dict[tuple[str, Market], dict[str, float]]] = {}
         position_lots: dict[tuple[str, Market, str], list[dict[str, float | str]]] = defaultdict(list)
         applied_split_counts: dict[tuple[str, Market, str], int] = defaultdict(int)
@@ -525,6 +543,25 @@ def compute_fund_snapshots(
             cash_flows[from_group_name] -= fx_entry.from_amount
             cash_flows[to_group_name] += fx_entry.to_amount
 
+        for cash_entry in cash_records:
+            if until and cash_entry.activity_date > until:
+                continue
+            group_name = cash_activity_group(cash_entry)
+            if group_name is None:
+                continue
+            signed_amount = (
+                cash_entry.amount
+                if cash_entry.direction == CashDirection.IN
+                else -cash_entry.amount
+            )
+            if cash_entry.category == CashActivityCategory.EXTERNAL_TRANSFER:
+                report_contributions[group_name] += signed_amount
+            elif cash_entry.category in {
+                CashActivityCategory.TAX,
+                CashActivityCategory.DIVIDEND,
+            }:
+                cash_flows[group_name] += signed_amount
+
         if settlements:
             for entry in settlements:
                 if until and entry.recorded_at > until:
@@ -544,7 +581,7 @@ def compute_fund_snapshots(
                 adjustment.amount
                 for adjustment in adjustments_by_group.get(name, [])
                 if adjustment.effective_date <= cutoff
-            )
+            ) + report_contributions.get(name, 0.0)
             base_amount = group.initial_amount + contributions
             cash_balance = base_amount + delta
             holdings = inventories.get(name, {})
@@ -569,10 +606,6 @@ def compute_fund_snapshots(
         lambda: defaultdict(float)
     )
     if realized_pnl_records is not None:
-        groups_by_currency: dict[Currency, list[str]] = defaultdict(list)
-        for name, group in group_lookup.items():
-            groups_by_currency[group.currency].append(name)
-
         for record in realized_pnl_records:
             target_year = record.trade_date.year
             canonical_groups = groups_by_currency.get(record.position_currency, [])
@@ -608,6 +641,16 @@ def compute_fund_snapshots(
 
         for entry in annual_settlements:
             realized_years_by_group[entry.funding_group][entry.year] -= entry.amount
+
+        for entry in cash_records:
+            group_name = cash_activity_group(entry)
+            if group_name is None or entry.category not in {
+                CashActivityCategory.TAX,
+                CashActivityCategory.DIVIDEND,
+            }:
+                continue
+            signed_amount = entry.amount if entry.direction == CashDirection.IN else -entry.amount
+            realized_years_by_group[group_name][entry.activity_date.year] += signed_amount
 
     snapshots: list[FundSnapshot] = []
     for name, group in group_lookup.items():

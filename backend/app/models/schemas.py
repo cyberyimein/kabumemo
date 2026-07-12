@@ -4,7 +4,7 @@ from datetime import date
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, FieldValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Market(str, Enum):
@@ -15,6 +15,22 @@ class Market(str, Enum):
 class Currency(str, Enum):
     JPY = "JPY"
     USD = "USD"
+
+
+class CashDirection(str, Enum):
+    IN = "in"
+    OUT = "out"
+
+
+class CashActivityCategory(str, Enum):
+    EXTERNAL_TRANSFER = "external_transfer"
+    INTERNAL_TRANSFER = "internal_transfer"
+    TRADE_SETTLEMENT = "trade_settlement"
+    DIVIDEND = "dividend"
+    TAX = "tax"
+    INVESTMENT = "investment"
+    FX = "fx"
+    OTHER = "other"
 
 
 class TaxStatus(str, Enum):
@@ -85,6 +101,20 @@ class StockSplitCreate(StockSplitBase):
 
 class StockSplitRecord(StockSplitBase):
     id: str
+
+
+class StockSplitCandidate(StockSplitBase):
+    source: str = "yahoo_finance"
+    confidence: str = "confirmed"
+    quantity_before: float
+    suggested_quantity_after: float
+    quantity_delta: float
+
+
+class StockSplitDetectionResponse(BaseModel):
+    candidates: list[StockSplitCandidate]
+    scanned_symbols: int
+    failed_symbols: list[str] = Field(default_factory=list)
 
 
 class FxExchangeBase(BaseModel):
@@ -429,6 +459,8 @@ class BrokerImportFile(BaseModel):
 class BrokerImportPreviewRequest(BaseModel):
     domestic_report: Optional[BrokerImportFile] = None
     us_report: Optional[BrokerImportFile] = None
+    jpy_cash_report: Optional[BrokerImportFile] = None
+    foreign_cash_report: Optional[BrokerImportFile] = None
     position_group_jpy: str = "JPY"
     settlement_group_jpy: str = "JPY"
     position_group_usd: str = "USD"
@@ -454,16 +486,52 @@ class BrokerImportPreviewItem(BaseModel):
     memo: Optional[str] = None
 
 
+class CashActivity(BaseModel):
+    id: str
+    activity_date: date
+    direction: CashDirection
+    currency: Optional[Currency] = None
+    amount: float = Field(..., ge=0.0)
+    category: CashActivityCategory
+    transaction_type: str
+    detail_type: str
+    description: str
+    source_file: str
+    source_line: int
+    link_group_id: Optional[str] = None
+    linked_activity_id: Optional[str] = None
+
+
 class BrokerImportPreviewResponse(BaseModel):
     items: list[BrokerImportPreviewItem]
+    cash_items: list[CashActivity] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     applied_count: int = 0
     skipped_count: int = 0
     applied_transaction_ids: list[str] = Field(default_factory=list)
+    applied_cash_count: int = 0
+    skipped_cash_count: int = 0
+    applied_cash_activity_ids: list[str] = Field(default_factory=list)
 
 
 class BrokerImportApplyRequest(BrokerImportPreviewRequest):
     replace_existing_transactions: bool = False
+
+
+class BrokerImportUndoRequest(BaseModel):
+    transaction_ids: list[str] = Field(default_factory=list)
+    cash_activity_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_imported_ids(self) -> "BrokerImportUndoRequest":
+        if not self.transaction_ids and not self.cash_activity_ids:
+            raise ValueError("At least one imported record id is required")
+        return self
+
+
+class BrokerImportUndoResponse(BaseModel):
+    deleted_transaction_ids: list[str] = Field(default_factory=list)
+    deleted_cash_activity_ids: list[str] = Field(default_factory=list)
 
 
 class SuspiciousDuplicateGroup(BaseModel):

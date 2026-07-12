@@ -11,8 +11,11 @@ from ..models.schemas import (
     BatchDeleteTransactionsRequest,
     BatchDeleteTransactionsResponse,
     BrokerImportApplyRequest,
+    BrokerImportUndoRequest,
+    BrokerImportUndoResponse,
     BrokerImportPreviewRequest,
     BrokerImportPreviewResponse,
+    CashActivity,
     Currency,
     FundSnapshots,
     FundingCapitalAdjustment,
@@ -31,6 +34,7 @@ from ..models.schemas import (
     RoundTripYieldRequest,
     RoundTripYieldResponse,
     StockSplitBase,
+    StockSplitDetectionResponse,
     StockSplitCreate,
     StockSplitRecord,
     SuspiciousDuplicateResponse,
@@ -55,6 +59,7 @@ from ..services.history import get_position_history
 from ..services.broker_import import apply_broker_import, preview_broker_import, preview_items_to_transactions
 from ..services.realized_pnl import rebuild_and_persist_realized_pnl
 from ..services.stock_splits import adjusted_quantity_for_date
+from ..services.split_detection import detect_stock_split_candidates
 from ..storage.repository import LocalDataRepository
 from ..services.quotes import refresh_quotes_if_needed
 
@@ -287,6 +292,7 @@ def get_funds() -> FundSnapshots:
     fx_exchanges = repository.list_fx_exchanges()
     stock_splits = repository.list_stock_splits()
     realized_pnl_records = repository.list_realized_pnl_records()
+    cash_activities = repository.list_cash_activities()
     try:
         return compute_fund_snapshots(
             transactions,
@@ -297,6 +303,7 @@ def get_funds() -> FundSnapshots:
             fx_exchanges,
             stock_splits,
             realized_pnl_records,
+            cash_activities,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -366,9 +373,22 @@ def list_capital_adjustments() -> list[FundingCapitalAdjustment]:
     return repository.list_capital_adjustments()
 
 
+@router.get("/cash-activities", response_model=list[CashActivity])
+def list_cash_activities() -> list[CashActivity]:
+    return repository.list_cash_activities()
+
+
 @router.get("/stock-splits", response_model=list[StockSplitRecord])
 def list_stock_splits() -> list[StockSplitRecord]:
     return repository.list_stock_splits()
+
+
+@router.post("/stock-splits/detect", response_model=StockSplitDetectionResponse)
+def detect_stock_splits() -> StockSplitDetectionResponse:
+    return detect_stock_split_candidates(
+        repository.list_transactions(),
+        repository.list_stock_splits(),
+    )
 
 
 @router.post(
@@ -519,6 +539,11 @@ def preview_broker_report_import(
     )
     preview.applied_count = len(applied_transactions)
     preview.skipped_count = skipped_count
+    applied_cash, skipped_cash = repository.preview_cash_activities_skip_duplicates(
+        preview.cash_items
+    )
+    preview.applied_cash_count = len(applied_cash)
+    preview.skipped_cash_count = skipped_cash
     return preview
 
 
@@ -529,12 +554,26 @@ def apply_broker_report_import(
     preview = apply_broker_import(payload)
     transactions = preview_items_to_transactions(preview.items)
     if payload.replace_existing_transactions:
-        repository.replace_transactions(transactions)
-        repository.clear_tax_settlements()
-        rebuild_and_persist_realized_pnl(repository, transactions)
-        preview.applied_count = len(transactions)
-        preview.skipped_count = 0
-        preview.applied_transaction_ids = [transaction.id for transaction in transactions]
+        has_transaction_reports = bool(payload.domestic_report or payload.us_report)
+        has_cash_reports = bool(payload.jpy_cash_report or payload.foreign_cash_report)
+        if has_transaction_reports:
+            repository.replace_transactions(transactions)
+            repository.clear_tax_settlements()
+            rebuild_and_persist_realized_pnl(repository, transactions)
+            preview.applied_count = len(transactions)
+            preview.skipped_count = 0
+            preview.applied_transaction_ids = [transaction.id for transaction in transactions]
+        if has_cash_reports:
+            retained_cash = repository.list_cash_activities()
+            if payload.jpy_cash_report:
+                retained_cash = [item for item in retained_cash if item.currency != Currency.JPY]
+            if payload.foreign_cash_report:
+                retained_cash = [item for item in retained_cash if item.currency == Currency.JPY]
+            replaced_cash = [*retained_cash, *preview.cash_items]
+            repository.replace_cash_activities(replaced_cash)
+            preview.applied_cash_count = len(preview.cash_items)
+            preview.skipped_cash_count = 0
+            preview.applied_cash_activity_ids = [item.id for item in preview.cash_items]
         return preview
 
     merged_transactions, applied_transactions, skipped_count = (
@@ -545,6 +584,39 @@ def apply_broker_report_import(
     preview.applied_count = len(applied_transactions)
     preview.skipped_count = skipped_count
     preview.applied_transaction_ids = [transaction.id for transaction in applied_transactions]
+    applied_cash, skipped_cash = repository.merge_cash_activities_skip_duplicates(
+        preview.cash_items
+    )
+    preview.applied_cash_count = len(applied_cash)
+    preview.skipped_cash_count = skipped_cash
+    preview.applied_cash_activity_ids = [item.id for item in applied_cash]
     if skipped_count:
         preview.warnings.append(f"Skipped {skipped_count} duplicate transactions")
+    if skipped_cash:
+        preview.warnings.append(f"Skipped {skipped_cash} duplicate cash activities")
     return preview
+
+
+@router.post("/imports/broker/undo", response_model=BrokerImportUndoResponse)
+def undo_broker_report_import(
+    payload: BrokerImportUndoRequest,
+) -> BrokerImportUndoResponse:
+    try:
+        transaction_ids = {item.id for item in repository.list_transactions()}
+        cash_activity_ids = {item.id for item in repository.list_cash_activities()}
+        missing_transactions = [item for item in payload.transaction_ids if item not in transaction_ids]
+        missing_cash = [item for item in payload.cash_activity_ids if item not in cash_activity_ids]
+        if missing_transactions:
+            raise ValueError(f"Transaction {missing_transactions[0]} not found")
+        if missing_cash:
+            raise ValueError(f"Cash activity {missing_cash[0]} not found")
+        deleted_transaction_ids = repository.delete_transactions(payload.transaction_ids)
+        deleted_cash_activity_ids = repository.delete_cash_activities(payload.cash_activity_ids)
+        if deleted_transaction_ids:
+            rebuild_and_persist_realized_pnl(repository)
+        return BrokerImportUndoResponse(
+            deleted_transaction_ids=deleted_transaction_ids,
+            deleted_cash_activity_ids=deleted_cash_activity_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

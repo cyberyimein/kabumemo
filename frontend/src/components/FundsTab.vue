@@ -1,15 +1,79 @@
 <template>
-  <section class="funds-panel surface-panel">
+  <section class="funds-panel surface-panel app-panel">
     <header class="panel-header">
       <div>
         <h2>{{ t("funds.title") }}</h2>
         <p>{{ t("funds.description") }}</p>
       </div>
-      <button type="button" class="refresh-button" @click="$emit('refresh')">
-        {{ t("common.actions.refresh") }}
-      </button>
+      <div class="header-actions">
+        <button type="button" class="ghost-btn" @click="settingsOpen = !settingsOpen">
+          {{ settingsOpen ? t("funds.actions.closeSettings") : t("funds.actions.settings") }}
+        </button>
+        <button type="button" class="ghost-btn" @click="advancedOpen = !advancedOpen">
+          {{ advancedOpen ? t("funds.actions.closeAdvanced") : t("funds.actions.advanced") }}
+        </button>
+        <button type="button" class="refresh-button" @click="$emit('refresh')">
+          {{ t("common.actions.refresh") }}
+        </button>
+      </div>
     </header>
 
+    <section class="account-overview">
+      <article v-for="item in aggregated" :key="item.currency" class="account-card">
+        <div class="account-card__head">
+          <div>
+            <span class="account-card__eyebrow">{{ t("funds.overview.brokerAccount") }}</span>
+            <h3>{{ item.currency }}</h3>
+          </div>
+          <span class="currency-orb">{{ item.currency === 'JPY' ? '¥' : '$' }}</span>
+        </div>
+        <strong class="account-card__total">{{ formatCurrency(item.current_total, item.currency) }}</strong>
+        <div class="account-card__metrics">
+          <span><small>{{ t("funds.snapshotTable.cash") }}</small><b>{{ formatCurrency(item.cash_balance, item.currency) }}</b></span>
+          <span><small>{{ t("funds.snapshotTable.holdingCost") }}</small><b>{{ formatCurrency(item.holding_cost, item.currency) }}</b></span>
+          <span><small>{{ t("funds.aggregateTable.totalPl") }}</small><b :class="valueClass(item.total_pl)">{{ formatCurrency(item.total_pl, item.currency) }}</b></span>
+        </div>
+      </article>
+    </section>
+
+    <section class="cash-ledger surface">
+      <div class="section-toolbar">
+        <div>
+          <h3>{{ t("funds.cashLedger.title") }}</h3>
+          <p class="cash-ledger__description">{{ t("funds.cashLedger.description", { count: cashActivities.length }) }}</p>
+        </div>
+        <div class="cash-ledger__summary">
+          <span>JPY <b>{{ cashActivityCount('JPY') }}</b></span>
+          <span>USD <b>{{ cashActivityCount('USD') }}</b></span>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>{{ t("funds.cashLedger.date") }}</th>
+            <th>{{ t("funds.cashLedger.type") }}</th>
+            <th>{{ t("funds.cashLedger.descriptionColumn") }}</th>
+            <th class="numeric">{{ t("funds.cashLedger.amount") }}</th>
+            <th>{{ t("common.labels.tags") }}</th>
+          </tr></thead>
+          <tbody>
+            <tr v-if="!recentCashActivities.length"><td colspan="5" class="empty">{{ t("funds.cashLedger.empty") }}</td></tr>
+            <tr v-for="activity in recentCashActivities" :key="activity.id">
+              <td>{{ activity.activity_date }}</td>
+              <td>{{ activity.detail_type || activity.transaction_type }}</td>
+              <td class="cash-description">{{ activity.description }}</td>
+              <td :class="['numeric', activity.direction === 'in' ? 'positive' : 'negative']">
+                {{ activity.direction === 'in' ? '+' : '−' }}{{ formatCurrency(activity.amount, activity.currency || 'JPY') }}
+              </td>
+              <td><div class="inline-tags"><span class="flat-tag flat-tag--currency">{{ activity.currency || '-' }}</span><span class="flat-tag">{{ activity.category }}</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div v-if="settingsOpen" class="settings-section">
+      <div class="section-label">{{ t("funds.actions.settings") }}</div>
     <div class="panel-grid">
       <form class="surface" @submit.prevent="handleSubmit">
         <h3>{{ t("funds.formTitle") }}</h3>
@@ -176,8 +240,9 @@
         @update:page="setFundsPage"
       />
     </div>
+    </div>
 
-    <div class="surface">
+    <div v-if="advancedOpen" class="surface">
       <h3>{{ t("funds.aggregateTitle") }}</h3>
       <div class="aggregate-controls">
         <label class="exchange-rate-field">
@@ -271,7 +336,7 @@
       </div>
     </div>
 
-    <div class="surface fx-panel">
+    <div v-if="advancedOpen" class="surface fx-panel">
       <header class="fx-header">
         <div>
           <h3>{{ t("funds.fx.title") }}</h3>
@@ -417,7 +482,7 @@
       </div>
     </div>
 
-    <div class="surface">
+    <div v-if="advancedOpen" class="surface">
       <div class="section-toolbar">
         <div>
           <h3>{{ t("funds.stockSplits.title") }}</h3>
@@ -536,7 +601,7 @@
       />
     </div>
 
-    <div class="surface">
+    <div v-if="advancedOpen" class="surface">
       <div class="capital-history-header">
         <div>
           <h3>{{ t("funds.capitalHistory.title") }}</h3>
@@ -681,6 +746,7 @@ import { usePagination } from "@/composables/usePagination";
 import { getUsdJpyRate } from "@/services/api";
 import type {
   AggregatedFundSnapshot,
+  CashActivity,
   Currency,
   FxExchangeCreate,
   FxExchangeRecord,
@@ -703,6 +769,7 @@ const props = defineProps<{
   stockSplits: StockSplit[];
   fxExchanges: FxExchangeRecord[];
   transactions: Transaction[];
+  cashActivities: CashActivity[];
 }>();
 
 type CapitalAdditionEvent = {
@@ -729,6 +796,14 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const pending = ref(false);
+const settingsOpen = ref(false);
+const advancedOpen = ref(false);
+const recentCashActivities = computed(() =>
+  [...props.cashActivities].sort((a, b) => b.activity_date.localeCompare(a.activity_date)).slice(0, 12)
+);
+function cashActivityCount(currency: Currency): number {
+  return props.cashActivities.filter((item) => item.currency === currency).length;
+}
 const form = reactive<FundingGroup>({
   name: "",
   currency: "JPY",
@@ -1513,6 +1588,35 @@ function selectCapitalAdjustment(id: string) {
   margin-top: 0.4rem;
   color: var(--text-dim);
   font-size: 0.88rem;
+}
+
+.header-actions { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; justify-content: flex-end; }
+.account-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.account-card { padding: 1.35rem 1.5rem; border-radius: var(--radius-lg); color: #f8f5ec; background: linear-gradient(135deg, #123a3e, #205a58); box-shadow: 0 12px 28px rgba(17, 57, 61, 0.14); }
+.account-card:nth-child(2) { background: linear-gradient(135deg, #172f3d, #31566a); }
+.account-card__head { display: flex; align-items: flex-start; justify-content: space-between; }
+.account-card__eyebrow { color: rgba(255,255,255,.62); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+.account-card h3 { margin-top: .15rem; font-size: 1rem; }
+.currency-orb { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid rgba(255,255,255,.24); border-radius: 50%; font-size: 1.1rem; }
+.account-card__total { display: block; margin: 1rem 0 1.25rem; font-size: clamp(1.7rem, 3vw, 2.4rem); font-variant-numeric: tabular-nums; }
+.account-card__metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,.15); }
+.account-card__metrics span { display: grid; gap: .25rem; }
+.account-card__metrics small { color: rgba(255,255,255,.58); }
+.account-card__metrics b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.account-card .positive { color: #8ad7b7; }
+.account-card .negative { color: #ffadad; }
+.cash-ledger { padding: 0; overflow: hidden; }
+.cash-ledger .section-toolbar { padding: 1.2rem 1.35rem 0; }
+.cash-ledger__description { margin-top: .35rem; color: var(--text-dim); font-size: .84rem; }
+.cash-ledger__summary { display: flex; gap: .5rem; }
+.cash-ledger__summary span { padding: .35rem .65rem; border-radius: 999px; background: var(--panel-soft); color: var(--text-dim); font-size: .78rem; }
+.cash-description { min-width: 240px; color: var(--text-dim); }
+.settings-section { display: grid; gap: 1rem; padding-top: .5rem; }
+.section-label { color: var(--text-faint); font-size: .76rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+
+@media (max-width: 760px) {
+  .account-overview { grid-template-columns: 1fr; }
+  .account-card__metrics { grid-template-columns: 1fr; }
 }
 
 .panel-grid {
